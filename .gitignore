@@ -1,0 +1,15 @@
+# Gradle
+.gradle/
+build/
+
+# IDE
+.cache/
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project
+local-storage/
+arkki-snappi.code-workspace
