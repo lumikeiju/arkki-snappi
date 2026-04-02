@@ -47,17 +47,23 @@ public final class SnappiPreferences {
     /** Whether to auto-select the created way. */
     public static final String KEY_AUTO_SELECT = "arkki_snappi.auto_select";
 
-    /** Whether to show the address dialog after building creation. */
-    public static final String KEY_SHOW_ADDRESS = "arkki_snappi.show_address";
-
     /** Per-axis cap on grid lines rendered. */
     public static final String KEY_MAX_GRID_LINES = "arkki_snappi.max_grid_lines";
 
     /** Pixel radius for edge-handle hover detection. */
     public static final String KEY_HANDLE_RADIUS = "arkki_snappi.handle_radius";
 
+    /** Pixel radius for snapping corners to existing OSM nodes. */
+    public static final String KEY_NODE_SNAP_RADIUS = "arkki_snappi.node_snap_radius";
+
     /** Whether closed ways are wound counter-clockwise (true) or clockwise (false). */
     public static final String KEY_CCW_WINDING = "arkki_snappi.ccw_winding";
+
+    /** Whether to auto-simplify (remove collinear nodes) when finishing a shape. */
+    public static final String KEY_AUTO_SIMPLIFY = "arkki_snappi.auto_simplify";
+
+    /** Whether to auto-shrinkwrap (resolve self-intersections) when finishing a shape. */
+    public static final String KEY_AUTO_SHRINKWRAP = "arkki_snappi.auto_shrinkwrap";
 
     // ------------------------------------------------------------------
     // Color keys
@@ -81,10 +87,12 @@ public final class SnappiPreferences {
     public static final String DEFAULT_STEP_PRESETS =
             "0.0762;0.1524;0.3048;0.6096;1.0;0.5;0.25";
     public static final boolean DEFAULT_AUTO_SELECT = true;
-    public static final boolean DEFAULT_SHOW_ADDRESS = false;
     public static final int DEFAULT_MAX_GRID_LINES = 200;
     public static final int DEFAULT_HANDLE_RADIUS = 10;
+    public static final int DEFAULT_NODE_SNAP_RADIUS = 15;
     public static final boolean DEFAULT_CCW_WINDING = true;
+    public static final boolean DEFAULT_AUTO_SIMPLIFY = true;
+    public static final boolean DEFAULT_AUTO_SHRINKWRAP = true;
 
     private SnappiPreferences() {
         // utility class — no instances
@@ -225,15 +233,6 @@ public final class SnappiPreferences {
         Config.getPref().putBoolean(KEY_AUTO_SELECT, v);
     }
 
-    /** Whether to show the address dialog after creation. */
-    public static boolean isShowAddress() {
-        return Config.getPref().getBoolean(KEY_SHOW_ADDRESS, DEFAULT_SHOW_ADDRESS);
-    }
-
-    public static void setShowAddress(boolean v) {
-        Config.getPref().putBoolean(KEY_SHOW_ADDRESS, v);
-    }
-
     /** Maximum grid lines per axis. */
     public static int getMaxGridLines() {
         return Config.getPref().getInt(KEY_MAX_GRID_LINES, DEFAULT_MAX_GRID_LINES);
@@ -248,6 +247,16 @@ public final class SnappiPreferences {
         return Config.getPref().getInt(KEY_HANDLE_RADIUS, DEFAULT_HANDLE_RADIUS);
     }
 
+    /** Pixel radius for snapping corners to existing OSM nodes. */
+    public static int getNodeSnapRadius() {
+        return Config.getPref().getInt(KEY_NODE_SNAP_RADIUS, DEFAULT_NODE_SNAP_RADIUS);
+    }
+
+    /** Persists the node snap radius. */
+    public static void setNodeSnapRadius(int px) {
+        Config.getPref().putInt(KEY_NODE_SNAP_RADIUS, px);
+    }
+
     /** Whether closed ways use counter-clockwise winding (true) or clockwise (false). */
     public static boolean isCcwWinding() {
         return Config.getPref().getBoolean(KEY_CCW_WINDING, DEFAULT_CCW_WINDING);
@@ -257,38 +266,56 @@ public final class SnappiPreferences {
         Config.getPref().putBoolean(KEY_CCW_WINDING, ccw);
     }
 
+    /** Whether to auto-simplify (remove collinear nodes) when finishing. */
+    public static boolean isAutoSimplify() {
+        return Config.getPref().getBoolean(KEY_AUTO_SIMPLIFY, DEFAULT_AUTO_SIMPLIFY);
+    }
+
+    public static void setAutoSimplify(boolean v) {
+        Config.getPref().putBoolean(KEY_AUTO_SIMPLIFY, v);
+    }
+
+    /** Whether to auto-shrinkwrap (resolve self-intersections) when finishing. */
+    public static boolean isAutoShrinkwrap() {
+        return Config.getPref().getBoolean(KEY_AUTO_SHRINKWRAP, DEFAULT_AUTO_SHRINKWRAP);
+    }
+
+    public static void setAutoShrinkwrap(boolean v) {
+        Config.getPref().putBoolean(KEY_AUTO_SHRINKWRAP, v);
+    }
+
     // ------------------------------------------------------------------
     // Colors (stored as ARGB int)
     // ------------------------------------------------------------------
 
-    /** Grid line color. Default: semi-transparent cyan. */
+    /** Grid line color. Default: steel blue, drafting style. */
     public static Color getGridColor() {
-        return getColor(KEY_COLOR_GRID, new Color(0, 180, 255, 100));
+        return getColor(KEY_COLOR_GRID, new Color(100, 130, 180, 120));
     }
 
-    /** Rectangle preview stroke color. Default: blue. */
+    /** Rectangle preview stroke color. Default: dark navy. */
     public static Color getRectColor() {
-        return getColor(KEY_COLOR_RECT, new Color(0, 100, 255, 200));
+        return getColor(KEY_COLOR_RECT, new Color(30, 60, 120, 220));
     }
 
     /** Anchor dot color. Default: red. */
     public static Color getAnchorColor() {
-        return getColor(KEY_COLOR_ANCHOR, new Color(255, 40, 40));
+        return getColor(KEY_COLOR_ANCHOR, new Color(220, 50, 50));
     }
 
-    /** Target / snapped corner dot color. Default: green. */
+    /** Target / snapped corner dot color. Default: white. */
     public static Color getTargetColor() {
-        return getColor(KEY_COLOR_TARGET, new Color(40, 220, 40));
+        return getColor(KEY_COLOR_TARGET, new Color(255, 255, 255));
     }
 
-    /** Edge handle dot color. Default: yellow. */
+    /** Edge handle dot color. Default: white. */
     public static Color getHandleColor() {
-        return getColor(KEY_COLOR_HANDLE, new Color(255, 220, 0));
+        return getColor(KEY_COLOR_HANDLE, new Color(255, 255, 255));
     }
 
-    /** Extrude preview fill color. Default: translucent blue. */
+    /** Extrude preview fill color. Default: light steel blue. */
     public static Color getExtrudeColor() {
-        return getColor(KEY_COLOR_EXTRUDE, new Color(0, 100, 255, 60));
+        return getColor(KEY_COLOR_EXTRUDE, new Color(100, 130, 180, 50));
     }
 
     // ------------------------------------------------------------------
@@ -335,12 +362,11 @@ public final class SnappiPreferences {
      * Produces clean output like "1 ft" instead of "1.000000 ft".
      */
     private static String formatNumber(double value) {
-        // Use enough precision to avoid loss, then strip trailing zeros
-        String s = String.format("%.6f", value);
-        if (s.contains(".")) {
-            s = s.replaceAll("0+$", "");
-            s = s.replaceAll("\\.$", "");
-        }
+        // Use enough precision to avoid loss, then strip trailing zeros.
+        // Locale.ROOT ensures a dot decimal separator everywhere.
+        String s = String.format(java.util.Locale.ROOT, "%.6f", value);
+        s = s.replaceAll("0+$", "");
+        s = s.replaceAll("\\.$", "");
         return s;
     }
 
@@ -348,8 +374,20 @@ public final class SnappiPreferences {
     // Internal helpers
     // ------------------------------------------------------------------
 
+    /** Persists a color for the given key. */
+    public static void setGridColor(Color c) { setColor(KEY_COLOR_GRID, c); }
+    public static void setRectColor(Color c) { setColor(KEY_COLOR_RECT, c); }
+    public static void setAnchorColor(Color c) { setColor(KEY_COLOR_ANCHOR, c); }
+    public static void setTargetColor(Color c) { setColor(KEY_COLOR_TARGET, c); }
+    public static void setHandleColor(Color c) { setColor(KEY_COLOR_HANDLE, c); }
+    public static void setExtrudeColor(Color c) { setColor(KEY_COLOR_EXTRUDE, c); }
+
     private static Color getColor(String key, Color defaultColor) {
         int argb = Config.getPref().getInt(key, defaultColor.getRGB());
         return new Color(argb, true);
+    }
+
+    private static void setColor(String key, Color color) {
+        Config.getPref().putInt(key, color.getRGB());
     }
 }

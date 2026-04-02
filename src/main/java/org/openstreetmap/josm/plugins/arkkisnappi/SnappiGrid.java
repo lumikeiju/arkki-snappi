@@ -43,8 +43,11 @@ public final class SnappiGrid {
     /** Radius in pixels for the anchor and target dots. */
     private static final int DOT_RADIUS = 6;
 
+    /** Half-size in pixels for edge handle squares. */
+    private static final int HANDLE_HALF = 4;
+
     /** Stroke width in pixels for grid lines. */
-    private static final float GRID_STROKE_WIDTH = 0.5f;
+    private static final float GRID_STROKE_WIDTH = 1.0f;
 
     /** Stroke width in pixels for the rectangle preview. */
     private static final float RECT_STROKE_WIDTH = 2.5f;
@@ -53,7 +56,7 @@ public final class SnappiGrid {
     private static final Font LABEL_FONT = new Font(Font.SANS_SERIF, Font.BOLD, 12);
 
     /** Offset in pixels for length labels from their edge. */
-    private static final int LABEL_OFFSET = 14;
+    private static final int LABEL_OFFSET = 12;
 
     private SnappiGrid() {
         // utility class — no instances
@@ -313,6 +316,90 @@ public final class SnappiGrid {
     }
 
     /**
+     * Paints only the grid lines (no rectangle preview or dots).
+     * Used in PHASE_EXTRUDE where the building polygon outline is drawn
+     * separately to correctly follow the actual shape after extrusions.
+     */
+    public static void paintGridLines(Graphics2D g, MapView mv,
+                                      EastNorth anchor, EastNorth target,
+                                      EastNorth uAxis, EastNorth vAxis,
+                                      double stepU, double stepV,
+                                      EastNorth[] refCorners) {
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                RenderingHints.VALUE_ANTIALIAS_ON);
+
+        double dx = target.east() - anchor.east();
+        double dy = target.north() - anchor.north();
+        double uLen = dx * uAxis.east() + dy * uAxis.north();
+        double vLen = dx * vAxis.east() + dy * vAxis.north();
+
+        int margin = 3;
+        int maxLines = SnappiPreferences.getMaxGridLines();
+
+        int uSteps = (int) Math.round(uLen / stepU);
+        int vSteps = (int) Math.round(vLen / stepV);
+
+        int uMin = Math.min(0, uSteps) - margin;
+        int uMax = Math.max(0, uSteps) + margin;
+        int vMin = Math.min(0, vSteps) - margin;
+        int vMax = Math.max(0, vSteps) + margin;
+
+        if (refCorners != null) {
+            for (EastNorth rc : refCorners) {
+                double rdx = rc.east() - anchor.east();
+                double rdy = rc.north() - anchor.north();
+                double ru = rdx * uAxis.east() + rdy * uAxis.north();
+                double rv = rdx * vAxis.east() + rdy * vAxis.north();
+                int ruStep = (int) Math.round(ru / stepU);
+                int rvStep = (int) Math.round(rv / stepV);
+                uMin = Math.min(uMin, ruStep - margin);
+                uMax = Math.max(uMax, ruStep + margin);
+                vMin = Math.min(vMin, rvStep - margin);
+                vMax = Math.max(vMax, rvStep + margin);
+            }
+        }
+
+        uMin = Math.max(uMin, -maxLines);
+        uMax = Math.min(uMax, maxLines);
+        vMin = Math.max(vMin, -maxLines);
+        vMax = Math.min(vMax, maxLines);
+
+        Color gridColor = SnappiPreferences.getGridColor();
+        g.setColor(gridColor);
+        g.setStroke(new BasicStroke(GRID_STROKE_WIDTH));
+
+        for (int vi = vMin; vi <= vMax; vi++) {
+            EastNorth start = gridPoint(anchor, uAxis, vAxis, uMin * stepU, vi * stepV);
+            EastNorth end = gridPoint(anchor, uAxis, vAxis, uMax * stepU, vi * stepV);
+            drawLine(g, mv, start, end);
+        }
+        for (int ui = uMin; ui <= uMax; ui++) {
+            EastNorth start = gridPoint(anchor, uAxis, vAxis, ui * stepU, vMin * stepV);
+            EastNorth end = gridPoint(anchor, uAxis, vAxis, ui * stepU, vMax * stepV);
+            drawLine(g, mv, start, end);
+        }
+    }
+
+    /**
+     * Paints the outline of an arbitrary polygon (the actual building shape).
+     */
+    public static void paintPolygonOutline(Graphics2D g, MapView mv,
+                                           EastNorth[] corners) {
+        g.setColor(SnappiPreferences.getRectColor());
+        g.setStroke(new BasicStroke(RECT_STROKE_WIDTH));
+
+        Path2D path = new Path2D.Double();
+        Point first = mv.getPoint(corners[0]);
+        path.moveTo(first.x, first.y);
+        for (int i = 1; i < corners.length; i++) {
+            Point p = mv.getPoint(corners[i]);
+            path.lineTo(p.x, p.y);
+        }
+        path.closePath();
+        g.draw(path);
+    }
+
+    /**
      * Paints a line preview for 3-click mode Phase 1 (anchor → adjacent corner).
      * Shows the line along the u-axis with snap tick marks.
      *
@@ -442,13 +529,20 @@ public final class SnappiGrid {
         g.translate(mx, my);
         g.rotate(angle);
 
-        // Background for readability
-        g.setColor(new Color(255, 255, 255, 180));
-        g.fillRect(-tw / 2 - 2, -LABEL_OFFSET - fm.getAscent(), tw + 4, fm.getHeight());
+        // Compact pill-style background
+        int padH = 5;
+        int padV = 2;
+        int textY = -LABEL_OFFSET;
+        int bgX = -tw / 2 - padH;
+        int bgY = textY - fm.getAscent() - padV;
+        int bgW = tw + padH * 2;
+        int bgH = fm.getAscent() + fm.getDescent() + padV * 2;
+        g.setColor(new Color(30, 30, 30, 210));
+        g.fillRoundRect(bgX, bgY, bgW, bgH, 8, 8);
 
-        // Text
-        g.setColor(new Color(40, 40, 40));
-        g.drawString(text, -tw / 2, -LABEL_OFFSET + fm.getDescent());
+        // White text
+        g.setColor(Color.WHITE);
+        g.drawString(text, -tw / 2, textY);
 
         g.setTransform(oldXf);
         g.setFont(oldFont);
@@ -577,7 +671,8 @@ public final class SnappiGrid {
     }
 
     /**
-     * Paints yellow handle dots at the midpoints of each edge of a closed way.
+     * Paints small hollow square handles at the midpoints of each edge.
+     * The hovered handle is drawn slightly larger and filled.
      *
      * @param g          graphics context
      * @param mv         map view
@@ -589,12 +684,19 @@ public final class SnappiGrid {
         Color handleColor = SnappiPreferences.getHandleColor();
         for (int i = 0; i < corners.length; i++) {
             EastNorth mid = midpoint(corners[i], corners[(i + 1) % corners.length]);
-            int radius = (i == hoverIndex) ? DOT_RADIUS + 2 : DOT_RADIUS;
             Point screen = mv.getPoint(mid);
-            g.setColor(handleColor);
-            g.fill(new Ellipse2D.Double(
-                    screen.x - radius, screen.y - radius,
-                    radius * 2, radius * 2));
+            if (i == hoverIndex) {
+                // Hovered: slightly larger filled square
+                int h = HANDLE_HALF + 2;
+                g.setColor(handleColor);
+                g.fillRect(screen.x - h, screen.y - h, h * 2, h * 2);
+            } else {
+                // Normal: small hollow square
+                g.setColor(handleColor);
+                g.setStroke(new BasicStroke(1.5f));
+                g.drawRect(screen.x - HANDLE_HALF, screen.y - HANDLE_HALF,
+                        HANDLE_HALF * 2, HANDLE_HALF * 2);
+            }
         }
     }
 

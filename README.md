@@ -10,32 +10,44 @@ JOSM plugin for quick and accurate building footprint mapping with a 2-axis snap
 
 ### Workflow
 
-1. **Click 1** — Place the anchor corner (red dot). A snap grid appears.
+1. **Click 1** — Place the anchor corner (red dot). A snap grid appears, oriented to a nearby building, selected way, or cardinal alignment.
 2. **Move mouse** — Both X and Y snap independently to step multiples (e.g. 1 ft). A live rectangle preview follows your cursor.
 3. **Click 2** — Commit the rectangle. Nodes, way, and default tags are created.
 4. **Drag edge handles** — Extrude any edge outward/inward with the same step snapping.
-5. **Esc** — Return to idle.
+5. **Click an edge** — Insert a new node at the nearest grid point, splitting the edge for partial extrusions.
+6. **Enter** — Finish the current building and return to idle.
+7. **Esc** — Cancel and return to idle.
 
-### Keyboard Modifiers
+Corners automatically snap to nearby existing nodes for shared-wall accuracy. When a shape is finished, collinear nodes are simplified and any self-intersections from overlapping extrusions are resolved automatically (shrinkwrap).
+
+### Keyboard Shortcuts
 
 | Key     | Effect                                   |
 |---------|------------------------------------------|
+| `B`     | Activate Snappi mode                     |
 | `A`     | Toggle cardinal (N/S/E/W) grid alignment |
+| `C`     | Halve the current snap step size         |
+| `V`     | Double the current snap step size        |
 | `Shift` | Lock snap to the dominant axis only      |
 | `Ctrl`  | Disable snapping (free position)         |
 | `Alt`   | Cycle to the next step preset            |
+| `Enter` | Finish the current building              |
 | `Esc`   | Cancel current operation                 |
 
 ## Settings
 
-Open via **More tools → Snappi settings…** or `Alt+Shift+B`:
+Available in **JOSM Preferences → ArkkiSnappi** tab, or via **More tools → Snappi settings…** (`Alt+Shift+B`):
 
-- **Step size** — Base snap increment (default: 1 ft / 0.3048 m)
+- **Step size** — Base snap increment (default: 1 ft / 0.3048 m), X and Y independently or linked
 - **Display unit** — `ft` or `m`
+- **Node snap radius** — Pixel radius for snapping corners to existing nodes (default: 15 px)
 - **Default tags** — Key/value pairs applied to new buildings (default: `building=yes`)
 - **Tag presets** — One-click buttons for common tag sets
 - **Auto-select** — Select newly created way (default: on)
+- **Auto-simplify** — Remove collinear nodes when finishing (default: on)
+- **Auto-shrinkwrap** — Resolve self-intersecting polygons when finishing (default: on)
 - **Winding order** — Counter-clockwise or clockwise node ordering
+- **Color themes** — Blueprint (default), Satellite, Neon, Ink — or pick individual colors
 
 ## Building
 

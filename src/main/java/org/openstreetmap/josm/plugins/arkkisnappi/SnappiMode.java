@@ -16,7 +16,7 @@ import org.openstreetmap.josm.actions.mapmode.MapMode;
 import org.openstreetmap.josm.command.AddCommand;
 import org.openstreetmap.josm.command.ChangeCommand;
 import org.openstreetmap.josm.command.Command;
-import org.openstreetmap.josm.command.MoveCommand;
+import org.openstreetmap.josm.command.DeleteCommand;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.UndoRedoHandler;
@@ -50,7 +50,7 @@ import org.openstreetmap.josm.tools.Shortcut;
  *   <li><b>PHASE_DEPTH</b> — (3-click only) edge defined; mouse controls
  *       perpendicular depth; third click commits the rectangle.</li>
  *   <li><b>PHASE_EXTRUDE</b> — rectangle committed; user can drag edge handles
- *       to extrude; double-click on an edge to split and extrude.</li>
+ *       to extrude; click on an edge to insert a node and split it.</li>
  * </ol>
  *
  * <p>Keyboard controls:</p>
@@ -58,7 +58,9 @@ import org.openstreetmap.josm.tools.Shortcut;
  *   <li><b>A</b> — toggle angle-snapping (cardinal-aligned grid)</li>
  *   <li><b>Shift</b> — axis-lock (snap only in the dominant axis)</li>
  *   <li><b>Ctrl</b> — free mode (disable snapping)</li>
- *   <li><b>Alt</b> — cycle to next smaller step preset</li>
+ *   <li><b>C</b> — halve the active snap step size</li>
+ *   <li><b>V</b> — double the active snap step size</li>
+ *   <li><b>Enter</b> — finish the current shape</li>
  *   <li><b>Esc</b> — cancel and return to IDLE</li>
  * </ul>
  *
@@ -142,7 +144,6 @@ public class SnappiMode extends MapMode
     private boolean shiftDown;
     private boolean ctrlDown;
     private boolean altDown;
-    private boolean altWasDown;
 
     private static final double MIN_EXTRUDE_THRESHOLD = 1e-6;
 
@@ -218,10 +219,33 @@ public class SnappiMode extends MapMode
         EastNorth mouseEN = mv.getEastNorth(e.getX(), e.getY());
 
         if (phase == Phase.PHASE_EXTRUDE) {
-            if (e.getClickCount() == 2 && createdWay != null && wayCorners != null) {
-                handleDoubleClickExtrude(e.getPoint(), mouseEN);
-            } else if (hoveredEdge < 0) {
+            syncWayCorners();
+            if (createdWay != null && wayCorners != null) {
+                // Single-click on an edge (not a handle) inserts a node,
+                // splitting it for subsequent extrusion.
+                int edgeIdx = SnappiGrid.hitTestEdge(e.getPoint(), mv, wayCorners,
+                        SnappiPreferences.getHandleRadius() * 2);
+                if (edgeIdx >= 0 && hoveredEdge < 0) {
+                    handleEdgeClickExtrude(e.getPoint(), mouseEN);
+                    mv.repaint();
+                    return;
+                }
+            }
+            if (hoveredEdge < 0) {
+                // Click away from building: finish current, start new
+                // building preserving the current axis orientation
+                shrinkwrapWay();
+                simplifyWay();
+                EastNorth prevU = uAxis;
+                EastNorth prevV = vAxis;
                 resetState();
+                // Restore axes so the next building uses the same orientation
+                uAxis = prevU;
+                vAxis = prevV;
+                if (uAxis != null && vAxis != null) {
+                    hasReferenceOrientation = true;
+                }
+                handleClickIdle(mouseEN, true);
                 mv.repaint();
             }
             return;
@@ -229,7 +253,7 @@ public class SnappiMode extends MapMode
 
         switch (phase) {
             case IDLE:
-                handleClickIdle(mouseEN);
+                handleClickIdle(mouseEN, false);
                 break;
             case PHASE_ANCHOR:
                 handleClickAnchor(mouseEN);
@@ -247,6 +271,7 @@ public class SnappiMode extends MapMode
     public void mousePressed(MouseEvent e) {
         if (e.getButton() != MouseEvent.BUTTON1) return;
         if (phase == Phase.PHASE_EXTRUDE && hoveredEdge >= 0) {
+            syncWayCorners();
             MapView mv = MainApplication.getMap().mapView;
             dragStart = mv.getEastNorth(e.getX(), e.getY());
             dragging = true;
@@ -280,6 +305,7 @@ public class SnappiMode extends MapMode
                 break;
             case PHASE_EXTRUDE:
                 if (!dragging && wayCorners != null) {
+                    syncWayCorners();
                     hoveredEdge = SnappiGrid.hitTestEdgeHandle(e.getPoint(), mv, wayCorners);
                 }
                 break;
@@ -306,16 +332,13 @@ public class SnappiMode extends MapMode
         shiftDown = (modifiers & KeyEvent.SHIFT_DOWN_MASK) != 0;
         ctrlDown = (modifiers & KeyEvent.CTRL_DOWN_MASK) != 0;
         altDown = (modifiers & KeyEvent.ALT_DOWN_MASK) != 0;
-
-        if (altDown && !altWasDown) {
-            cycleStep();
-        }
-        altWasDown = altDown;
     }
 
     @Override
     public void doKeyPressed(KeyEvent e) {
-        MapView mv = MainApplication.getMap().mapView;
+        MapFrame map = MainApplication.getMap();
+        if (map == null) return;
+        MapView mv = map.mapView;
         switch (e.getKeyCode()) {
             case KeyEvent.VK_ESCAPE:
                 if (phase != Phase.IDLE) {
@@ -323,8 +346,20 @@ public class SnappiMode extends MapMode
                     mv.repaint();
                 }
                 break;
+            case KeyEvent.VK_ENTER:
+                finishShape();
+                mv.repaint();
+                break;
             case KeyEvent.VK_A:
                 toggleAngleSnap();
+                mv.repaint();
+                break;
+            case KeyEvent.VK_C:
+                halveStep();
+                mv.repaint();
+                break;
+            case KeyEvent.VK_V:
+                doubleStep();
                 mv.repaint();
                 break;
             default:
@@ -422,8 +457,13 @@ public class SnappiMode extends MapMode
                 farthest = corner;
             }
         }
-        SnappiGrid.paintGrid(g, mv, anchorEN, farthest,
+        // Draw only grid lines (no simple rect preview) — the actual
+        // building polygon may no longer be a simple rectangle after extrusions
+        SnappiGrid.paintGridLines(g, mv, anchorEN, farthest,
                 uAxis, vAxis, activeStepU, activeStepV, referenceCorners);
+
+        // Draw the actual building polygon outline
+        SnappiGrid.paintPolygonOutline(g, mv, wayCorners);
 
         // Edge handles
         SnappiGrid.paintEdgeHandles(g, mv, wayCorners, hoveredEdge);
@@ -449,15 +489,31 @@ public class SnappiMode extends MapMode
 
     /**
      * IDLE → click: detect reference orientation, place anchor, enter PHASE_ANCHOR.
+     *
+     * @param mouseEN          click position in EastNorth
+     * @param preserveAxes     if true, keep the current uAxis/vAxis/hasReferenceOrientation
+     *                         (used when starting a new building after click-away)
      */
-    private void handleClickIdle(EastNorth mouseEN) {
+    private void handleClickIdle(EastNorth mouseEN, boolean preserveAxes) {
         anchorEN = mouseEN;
+
+        // Snap anchor to nearby existing node for precise connections
+        Node nearAnchor = findNearNode(anchorEN, SnappiPreferences.getNodeSnapRadius());
+        if (nearAnchor != null) {
+            anchorEN = nearAnchor.getEastNorth();
+        }
+
         activeStepU = SnappiPreferences.getStepXMetres();
         activeStepV = SnappiPreferences.getStepYMetres();
 
-        hasReferenceOrientation = false;
-        referenceWay = null;
-        referenceCorners = null;
+        if (!preserveAxes) {
+            hasReferenceOrientation = false;
+            referenceWay = null;
+            referenceCorners = null;
+        } else {
+            referenceWay = null;
+            referenceCorners = null;
+        }
 
         // 1. Angle-snap takes precedence
         if (angleSnap) {
@@ -633,16 +689,69 @@ public class SnappiMode extends MapMode
         return best;
     }
 
+    /**
+     * Finds the nearest existing OSM node within a screen-pixel radius
+     * of the given position, for snapping corners to existing features.
+     *
+     * @param en       the position to search near
+     * @param radiusPx hit radius in screen pixels
+     * @return the nearest node, or null if none within radius
+     */
+    private Node findNearNode(EastNorth en, double radiusPx) {
+        DataSet ds = getLayerManager().getEditDataSet();
+        if (ds == null) return null;
+
+        MapView mv = MainApplication.getMap().mapView;
+        Point screen = mv.getPoint(en);
+        double radiusSq = radiusPx * radiusPx;
+
+        Node best = null;
+        double bestDist = radiusSq;
+
+        for (Node n : ds.getNodes()) {
+            if (n.isDeleted() || n.isIncomplete()) continue;
+            Point np = mv.getPoint(n.getEastNorth());
+            double dSq = screen.distanceSq(np);
+            if (dSq < bestDist) {
+                bestDist = dSq;
+                best = n;
+            }
+        }
+        return best;
+    }
+
     // ------------------------------------------------------------------
-    // Double-click extrude (split edge + prepare for extrusion)
+    // Edge click (split edge + prepare for extrusion)
     // ------------------------------------------------------------------
 
     /**
-     * Handles a double-click on the building outline during PHASE_EXTRUDE.
-     * Adds a new node at the nearest grid point on the clicked edge,
-     * splitting the edge for subsequent extrusion.
+     * Re-synchronises {@code wayCorners} from the actual way data.
+     * This is necessary because undo/redo can revert the way's node list
+     * while {@code wayCorners} still holds stale data.
      */
-    private void handleDoubleClickExtrude(Point screenPoint, EastNorth mouseEN) {
+    private void syncWayCorners() {
+        if (createdWay == null || createdWay.isDeleted()) {
+            resetState();
+            return;
+        }
+        List<Node> nodes = createdWay.getNodes();
+        int count = createdWay.isClosed() ? nodes.size() - 1 : nodes.size();
+        if (count < 3) {
+            resetState();
+            return;
+        }
+        wayCorners = new EastNorth[count];
+        for (int i = 0; i < count; i++) {
+            wayCorners[i] = nodes.get(i).getEastNorth();
+        }
+    }
+
+    /**
+     * Handles a click on the building outline during PHASE_EXTRUDE.
+     * Adds a new node at the nearest grid point on the clicked edge,
+     * splitting the edge so the new segment can be extruded.
+     */
+    private void handleEdgeClickExtrude(Point screenPoint, EastNorth mouseEN) {
         if (wayCorners == null || createdWay == null) return;
 
         MapView mv = MainApplication.getMap().mapView;
@@ -716,11 +825,17 @@ public class SnappiMode extends MapMode
         List<Command> cmds = new ArrayList<>();
         List<Node> nodes = new ArrayList<>();
 
-        for (EastNorth en : corners) {
-            LatLon ll = ProjectionRegistry.getProjection().eastNorth2latlon(en);
-            Node n = new Node(ll);
-            cmds.add(new AddCommand(ds, n));
-            nodes.add(n);
+        for (int i = 0; i < corners.length; i++) {
+            Node nearNode = findNearNode(corners[i], SnappiPreferences.getNodeSnapRadius());
+            if (nearNode != null) {
+                nodes.add(nearNode);
+                corners[i] = nearNode.getEastNorth();
+            } else {
+                LatLon ll = ProjectionRegistry.getProjection().eastNorth2latlon(corners[i]);
+                Node n = new Node(ll);
+                cmds.add(new AddCommand(ds, n));
+                nodes.add(n);
+            }
         }
 
         Way way = new Way();
@@ -749,7 +864,9 @@ public class SnappiMode extends MapMode
     }
 
     /**
-     * Commits an edge extrusion.
+     * Commits an edge extrusion by creating two new nodes at the offset
+     * positions and inserting them into the way, producing a rectangular bump.
+     * The original corner nodes stay in place.
      */
     private void commitExtrude(EastNorth mouseEN) {
         if (hoveredEdge < 0 || wayCorners == null || createdWay == null) return;
@@ -765,27 +882,51 @@ public class SnappiMode extends MapMode
         if (ds == null) return;
 
         int i0 = hoveredEdge;
-        int i1 = (hoveredEdge + 1) % wayCorners.length;
 
-        List<Node> wayNodes = createdWay.getNodes();
-        Node node0 = wayNodes.get(i0);
-        Node node1 = wayNodes.get(i1);
+        // Compute extruded positions
+        EastNorth newPos0 = new EastNorth(
+                wayCorners[i0].east() + moveE,
+                wayCorners[i0].north() + moveN);
+        EastNorth newPos1 = new EastNorth(
+                wayCorners[(i0 + 1) % wayCorners.length].east() + moveE,
+                wayCorners[(i0 + 1) % wayCorners.length].north() + moveN);
+
+        // Create two new nodes at the extruded positions
+        Node newNode0 = new Node(
+                ProjectionRegistry.getProjection().eastNorth2latlon(newPos0));
+        Node newNode1 = new Node(
+                ProjectionRegistry.getProjection().eastNorth2latlon(newPos1));
+
+        // Build updated way node list: insert between i0 and i0+1
+        List<Node> newNodes = new ArrayList<>(createdWay.getNodes());
+        newNodes.add(i0 + 1, newNode1);
+        newNodes.add(i0 + 1, newNode0);
+
+        Way updatedWay = new Way(createdWay);
+        updatedWay.setNodes(newNodes);
 
         List<Command> cmds = new ArrayList<>();
-        cmds.add(new MoveCommand(node0, moveE, moveN));
-        cmds.add(new MoveCommand(node1, moveE, moveN));
+        cmds.add(new AddCommand(ds, newNode0));
+        cmds.add(new AddCommand(ds, newNode1));
+        cmds.add(new ChangeCommand(createdWay, updatedWay));
 
         UndoRedoHandler.getInstance().add(
                 new SequenceCommand(tr("Extrude edge (arkki-snappi)"), cmds));
 
-        wayCorners[i0] = new EastNorth(
-                wayCorners[i0].east() + moveE,
-                wayCorners[i0].north() + moveN);
-        wayCorners[i1] = new EastNorth(
-                wayCorners[i1].east() + moveE,
-                wayCorners[i1].north() + moveN);
+        // Update cached corners: insert newPos0 and newPos1 after i0
+        EastNorth[] newCorners = new EastNorth[wayCorners.length + 2];
+        for (int k = 0; k <= i0; k++) {
+            newCorners[k] = wayCorners[k];
+        }
+        newCorners[i0 + 1] = newPos0;
+        newCorners[i0 + 2] = newPos1;
+        for (int k = i0 + 1; k < wayCorners.length; k++) {
+            newCorners[k + 2] = wayCorners[k];
+        }
+        wayCorners = newCorners;
 
-        Logging.debug("arkki-snappi: extruded edge {0} by {1} m", hoveredEdge, offset);
+        Logging.debug("arkki-snappi: extruded edge {0} by {1} m, polygon now has {2} corners",
+                hoveredEdge, offset, wayCorners.length);
     }
 
     /**
@@ -808,26 +949,24 @@ public class SnappiMode extends MapMode
     }
 
     // ------------------------------------------------------------------
-    // Step cycling
+    // Step size adjustment
     // ------------------------------------------------------------------
 
     /**
-     * Advances the active step to the next preset, applying to both X and Y.
+     * Halves the active snap step size (C key).
      */
-    private void cycleStep() {
-        List<Double> presets = SnappiPreferences.getStepPresets();
-        if (presets.isEmpty()) return;
+    private void halveStep() {
+        activeStepU /= 2.0;
+        activeStepV /= 2.0;
+        refreshStatusText();
+    }
 
-        int idx = -1;
-        for (int i = 0; i < presets.size(); i++) {
-            if (Math.abs(presets.get(i) - activeStepU) < 1e-9) {
-                idx = i;
-                break;
-            }
-        }
-        idx = (idx + 1) % presets.size();
-        activeStepU = presets.get(idx);
-        activeStepV = presets.get(idx);
+    /**
+     * Doubles the active snap step size (V key).
+     */
+    private void doubleStep() {
+        activeStepU *= 2.0;
+        activeStepV *= 2.0;
         refreshStatusText();
     }
 
@@ -877,8 +1016,8 @@ public class SnappiMode extends MapMode
                 break;
             case PHASE_EXTRUDE:
                 map.statusLine.setHelpText(
-                        tr("Drag handle to extrude, double-click edge to split, "
-                                + "Esc to finish. Step: {0}{1}",
+                        tr("Drag handle to extrude, click edge to split, "
+                                + "Enter/Esc to finish. Step: {0}{1}",
                                 stepStr, angleStr));
                 break;
             default:
@@ -899,6 +1038,190 @@ public class SnappiMode extends MapMode
     // Reset
     // ------------------------------------------------------------------
 
+    /**
+     * Finishes the current shape: commits any in-progress rectangle,
+     * optionally shrinkwraps and simplifies the way, then resets to IDLE.
+     */
+    private void finishShape() {
+        switch (phase) {
+            case PHASE_ANCHOR:
+                if (snappedTarget != null && uAxis != null && hasReferenceOrientation) {
+                    commitRectangle();
+                    shrinkwrapWay();
+                    simplifyWay();
+                }
+                break;
+            case PHASE_DEPTH:
+                if (snappedTarget != null) {
+                    commitRectangle();
+                    shrinkwrapWay();
+                    simplifyWay();
+                }
+                break;
+            case PHASE_EXTRUDE:
+                shrinkwrapWay();
+                simplifyWay();
+                break;
+            default:
+                break;
+        }
+        resetState();
+    }
+
+    /**
+     * Resolves self-intersections in the committed way by computing
+     * its outer boundary (shrinkwrap). Replaces the way's nodes with
+     * the outermost outline; any orphaned interior nodes are deleted.
+     */
+    private void shrinkwrapWay() {
+        if (!SnappiPreferences.isAutoShrinkwrap()) return;
+        if (createdWay == null || wayCorners == null || wayCorners.length < 4) return;
+        if (!SnappiShrinkwrap.isSelfIntersecting(wayCorners)) return;
+
+        EastNorth[] outer = SnappiShrinkwrap.computeOuterBoundary(wayCorners);
+        if (outer == null || outer.length < 3) return;
+
+        DataSet ds = getLayerManager().getEditDataSet();
+        if (ds == null) return;
+
+        // Build new nodes for the outer boundary, reusing existing ones
+        // where they coincide
+        List<Command> cmds = new ArrayList<>();
+        List<Node> oldNodes = createdWay.getNodes();
+        List<Node> newWayNodes = new ArrayList<>();
+
+        for (EastNorth en : outer) {
+            Node existing = findMatchingNode(oldNodes, en);
+            if (existing != null) {
+                newWayNodes.add(existing);
+            } else {
+                LatLon ll = ProjectionRegistry.getProjection().eastNorth2latlon(en);
+                Node n = new Node(ll);
+                cmds.add(new AddCommand(ds, n));
+                newWayNodes.add(n);
+            }
+        }
+        newWayNodes.add(newWayNodes.get(0)); // close the way
+
+        Way updatedWay = new Way(createdWay);
+        updatedWay.setNodes(newWayNodes);
+        cmds.add(new ChangeCommand(createdWay, updatedWay));
+
+        // Delete orphaned old nodes that are no longer in the way
+        List<Node> nodesToDelete = new ArrayList<>();
+        int closedCount = createdWay.isClosed()
+                ? oldNodes.size() - 1 : oldNodes.size();
+        for (int i = 0; i < closedCount; i++) {
+            Node old = oldNodes.get(i);
+            if (!newWayNodes.contains(old) && !old.hasKeys()
+                    && old.getParentWays().size() <= 1) {
+                nodesToDelete.add(old);
+            }
+        }
+        if (!nodesToDelete.isEmpty()) {
+            cmds.add(new DeleteCommand(ds, nodesToDelete));
+        }
+
+        UndoRedoHandler.getInstance().add(
+                new SequenceCommand(tr("Shrinkwrap building (arkki-snappi)"), cmds));
+
+        // Update cached corners
+        wayCorners = outer;
+
+        Logging.debug("arkki-snappi: shrinkwrap resolved self-intersection, "
+                + "polygon now has {0} corners", outer.length);
+    }
+
+    /**
+     * Finds a node in the list whose EastNorth position matches the target
+     * within a tight tolerance (1 mm).
+     */
+    private static Node findMatchingNode(List<Node> nodes, EastNorth target) {
+        for (Node n : nodes) {
+            EastNorth en = n.getEastNorth();
+            if (Math.abs(en.east() - target.east()) < 1e-3 &&
+                    Math.abs(en.north() - target.north()) < 1e-3) {
+                return n;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Removes collinear (non-corner) nodes from the committed way.
+     * A node is collinear if it lies on the straight line between its
+     * neighbours within a small tolerance.
+     */
+    private void simplifyWay() {
+        if (!SnappiPreferences.isAutoSimplify()) return;
+        if (createdWay == null || wayCorners == null || wayCorners.length <= 4) return;
+
+        DataSet ds = getLayerManager().getEditDataSet();
+        if (ds == null) return;
+
+        // Identify non-corner (collinear) indices
+        List<Integer> removeIndices = new ArrayList<>();
+        int n = wayCorners.length;
+        for (int i = 0; i < n; i++) {
+            EastNorth prev = wayCorners[(i - 1 + n) % n];
+            EastNorth curr = wayCorners[i];
+            EastNorth next = wayCorners[(i + 1) % n];
+            if (isCollinear(prev, curr, next)) {
+                removeIndices.add(i);
+            }
+        }
+        if (removeIndices.isEmpty()) return;
+
+        // Build updated node list (closed way: last node == first)
+        List<Node> oldNodes = createdWay.getNodes();
+        List<Node> newNodes = new ArrayList<>();
+        List<Node> nodesToDelete = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            if (removeIndices.contains(i)) {
+                Node node = oldNodes.get(i);
+                // Delete orphan nodes: no tags and only referenced by this way
+                if (!node.hasKeys() && node.getParentWays().size() <= 1) {
+                    nodesToDelete.add(node);
+                }
+            } else {
+                newNodes.add(oldNodes.get(i));
+            }
+        }
+        newNodes.add(newNodes.get(0)); // close the way
+
+        Way updatedWay = new Way(createdWay);
+        updatedWay.setNodes(newNodes);
+
+        List<Command> cmds = new ArrayList<>();
+        cmds.add(new ChangeCommand(createdWay, updatedWay));
+        if (!nodesToDelete.isEmpty()) {
+            cmds.add(new DeleteCommand(ds, nodesToDelete));
+        }
+
+        UndoRedoHandler.getInstance().add(
+                new SequenceCommand(tr("Simplify building (arkki-snappi)"), cmds));
+
+        Logging.debug("arkki-snappi: simplified way, removed {0} collinear nodes",
+                removeIndices.size());
+    }
+
+    /**
+     * Returns true if point b lies on the segment a–c within tolerance.
+     */
+    private static boolean isCollinear(EastNorth a, EastNorth b, EastNorth c) {
+        double acE = c.east() - a.east();
+        double acN = c.north() - a.north();
+        double abE = b.east() - a.east();
+        double abN = b.north() - a.north();
+        // Cross product magnitude = area of parallelogram
+        double cross = Math.abs(acE * abN - acN * abE);
+        double lenAC = Math.sqrt(acE * acE + acN * acN);
+        if (lenAC < 1e-9) return true;
+        // Perpendicular distance from b to line a–c
+        double dist = cross / lenAC;
+        return dist < 0.01; // 1 cm tolerance
+    }
+
     /** Resets all transient state and returns to IDLE. */
     private void resetState() {
         phase = Phase.IDLE;
@@ -916,7 +1239,6 @@ public class SnappiMode extends MapMode
         hoveredEdge = -1;
         dragging = false;
         dragStart = null;
-        altWasDown = false;
         refreshStatusText();
     }
 }

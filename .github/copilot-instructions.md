@@ -15,13 +15,14 @@ arkki-snappi/
 ├── build.gradle                  # Gradle build (org.openstreetmap.josm plugin)
 ├── settings.gradle               # Root project name = ArkkiSnappi
 ├── gradle/wrapper/               # Gradle wrapper (no pre-install needed)
-├── docs/planning.md              # Full design spec — READ THIS FIRST
+├── local-storage/planning.md     # Full design spec — READ THIS FIRST
 ├── src/main/java/org/openstreetmap/josm/plugins/arkkisnappi/
 │   ├── ArkkiSnappiPlugin.java    # Entry point: registers mode on map frame init
 │   ├── SnappiMode.java           # MapMode state machine: IDLE → ANCHOR → EXTRUDE
 │   ├── SnappiGrid.java           # Stateless geometry + grid rendering utility
+│   ├── SnappiShrinkwrap.java     # Self-intersection detection + outer boundary
 │   ├── SnappiPreferences.java    # Typed preference accessors (Config.getPref wrappers)
-│   └── SnappiPreferencesDialog.java  # Swing settings dialog (ExtendedDialog)
+│   └── SnappiPreferencesDialog.java  # JOSM Preferences tab + standalone dialog
 └── images/mapmode/arkkisnappi.png    # Toolbar icon
 ```
 
@@ -37,11 +38,13 @@ Reference plugins: [multipoly-gone](https://github.com/watmildon/multipoly-gone)
 
 ## Architecture Quick Reference
 
-- **State machine** in `SnappiMode`: `IDLE` → click → `PHASE_ANCHOR` → click → `PHASE_DEPTH` (3-click) or `PHASE_EXTRUDE` (2-click with reference) → click → `PHASE_EXTRUDE` → Esc → `IDLE`
+- **State machine** in `SnappiMode`: `IDLE` → click → `PHASE_ANCHOR` → click → `PHASE_DEPTH` (3-click) or `PHASE_EXTRUDE` (2-click with reference) → click → `PHASE_EXTRUDE` → Enter/Esc → `IDLE`
 - **Reference orientation**: angle-snap (A key), selected way, or nearby building sets grid axes at anchor time; without reference, uses 3-click mode
 - **Snap grid** in `SnappiGrid`: local (u,v) coordinate frame from anchor point; u and v axes snap independently to separate step multiples in EastNorth space
-- **All data mutations** use JOSM Command pattern (`AddCommand`, `MoveCommand`, `ChangeCommand`, `SequenceCommand`) for undo safety
-- **Preferences** stored via `Config.getPref()` under `arkki_snappi.*` keys
+- **Auto-simplify**: removes collinear nodes on finish (toggleable via `arkki_snappi.auto_simplify`)
+- **Auto-shrinkwrap** in `SnappiShrinkwrap`: resolves self-intersecting polygons from overlapping extrusions by computing the outer boundary
+- **All data mutations** use JOSM Command pattern (`AddCommand`, `ChangeCommand`, `DeleteCommand`, `SequenceCommand`) for undo safety
+- **Preferences** stored via `Config.getPref()` under `arkki_snappi.*` keys; settings available in JOSM Preferences tab
 
 ## Coordinate Systems
 
@@ -68,7 +71,7 @@ Reference plugins: [multipoly-gone](https://github.com/watmildon/multipoly-gone)
 | `MapViewPaintable`                                              | Override `paint(Graphics2D, MapView, Bounds)` for overlays |
 | `MapView.getEastNorth(Point)`                                   | Screen → world conversion                                  |
 | `MapView.getPoint(EastNorth)`                                   | World → screen conversion                                  |
-| `AddCommand`, `MoveCommand`, `ChangeCommand`, `SequenceCommand` | Undo-safe data mutations                                   |
+| `AddCommand`, `ChangeCommand`, `DeleteCommand`, `SequenceCommand` | Undo-safe data mutations                                   |
 | `Config.getPref()`                                              | Preference access                                          |
 | `ExtendedDialog`                                                | Dialog base class                                          |
 | `IconToggleButton`                                              | Toolbar toggle button                                      |
@@ -76,8 +79,10 @@ Reference plugins: [multipoly-gone](https://github.com/watmildon/multipoly-gone)
 
 ## When Editing This Plugin
 
-1. Always read `docs/planning.md` for the full interaction design spec
+1. Always read `local-storage/planning.md` for the full interaction design spec
 2. All snapping math lives in `SnappiGrid` — keep `SnappiMode` focused on state + events
-3. Never write OSM data without wrapping in a JOSM Command
-4. Test modifier keys: Shift (axis-lock), Ctrl (free mode), Alt (step cycle)
-5. Keep grid rendering performant — clip to viewport, cap line count
+3. Self-intersection logic lives in `SnappiShrinkwrap` — keep it decoupled from mode state
+4. Never write OSM data without wrapping in a JOSM Command
+5. Test modifier keys: Shift (axis-lock), Ctrl (free mode), Alt (step cycle)
+6. Test action keys: Enter (finish), C (halve step), V (double step), A (angle snap)
+7. Keep grid rendering performant — clip to viewport, cap line count

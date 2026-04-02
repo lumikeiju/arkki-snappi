@@ -24,6 +24,15 @@ tasks.withType(JavaExec).configureEach {
     ]
 }
 
+sourceSets {
+    main {
+        resources {
+            srcDirs += projectDir  // include images/ at project root in the JAR
+            include 'images/**'
+        }
+    }
+}
+
 repositories {
     mavenCentral()
 }
