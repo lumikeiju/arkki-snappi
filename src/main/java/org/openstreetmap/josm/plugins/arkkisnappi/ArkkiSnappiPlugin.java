@@ -1,12 +1,12 @@
-// License: GPL. For details, see LICENSE file.
+// License: AGPL v3 or later. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.arkkisnappi;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
-import java.awt.event.KeyEvent;
-
+import org.openstreetmap.josm.actions.PreferencesAction;
 import org.openstreetmap.josm.gui.IconToggleButton;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.MainMenu;
 import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.preferences.PreferenceSetting;
 import org.openstreetmap.josm.plugins.Plugin;
@@ -17,7 +17,8 @@ import org.openstreetmap.josm.plugins.PluginInformation;
  *
  * <p>Registers {@link SnappiMode} as a new map mode when a map frame is
  * initialised, adding a toolbar toggle button that activates the snap-grid
- * building drawing mode. Plugin settings are available in JOSM's main
+ * building drawing mode. Also registers a "Snappi settings…" menu item
+ * under <em>More tools</em>. Plugin settings are available in JOSM's main
  * Preferences window under a dedicated "Snappi" tab.</p>
  *
  * @author Lumikeiju
@@ -28,11 +29,17 @@ public class ArkkiSnappiPlugin extends Plugin {
 
     /**
      * Constructs the plugin from JOSM-provided metadata.
+     * Registers the "Snappi settings…" action under JOSM's More tools menu.
      *
      * @param info plugin information supplied by JOSM at load time
      */
     public ArkkiSnappiPlugin(final PluginInformation info) {
         super(info);
+        MainMenu.add(MainApplication.getMenu().moreToolsMenu,
+                PreferencesAction.forPreferenceTab(
+                        tr("Snappi settings\u2026"),
+                        tr("Open the Snappi plugin preferences"),
+                        SnappiPreferencesDialog.class));
     }
 
     /**

@@ -1,4 +1,4 @@
-// License: GPL. For details, see LICENSE file.
+// License: AGPL v3 or later. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.arkkisnappi;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
@@ -131,6 +131,12 @@ public class SnappiMode extends MapMode
     /** True while the user is drag-extruding an edge. */
     private boolean dragging;
 
+    /** True if the mouse moved further than MIN_DRAG_PIXELS since mousePressed. */
+    private boolean wasDragged;
+
+    /** Screen-pixel position where the drag press started (for threshold check). */
+    private Point dragPressPoint;
+
     /** Mouse EastNorth when the drag started. */
     private EastNorth dragStart;
 
@@ -161,6 +167,9 @@ public class SnappiMode extends MapMode
     private boolean shiftDown;
     private boolean ctrlDown;
     private boolean altDown;
+
+    /** Current index into the step presets list (for Alt cycling). */
+    private int presetIndex = -1;
 
     private static final double MIN_EXTRUDE_THRESHOLD = 1e-6;
 
@@ -291,7 +300,9 @@ public class SnappiMode extends MapMode
             syncWayCorners();
             MapView mv = MainApplication.getMap().mapView;
             dragStart = mv.getEastNorth(e.getX(), e.getY());
+            dragPressPoint = e.getPoint();
             dragging = true;
+            wasDragged = false;
         }
     }
 
@@ -300,10 +311,25 @@ public class SnappiMode extends MapMode
         if (e.getButton() != MouseEvent.BUTTON1) return;
         if (dragging && phase == Phase.PHASE_EXTRUDE) {
             MapView mv = MainApplication.getMap().mapView;
-            EastNorth mouseEN = mv.getEastNorth(e.getX(), e.getY());
-            commitExtrude(mouseEN);
+            if (wasDragged) {
+                // Real drag — commit the extrusion
+                EastNorth mouseEN = mv.getEastNorth(e.getX(), e.getY());
+                commitExtrude(mouseEN);
+            } else {
+                // Bare click on a handle — insert a node at the midpoint
+                // of that edge so it can be extruded independently
+                if (hoveredEdge >= 0 && wayCorners != null) {
+                    int i1 = (hoveredEdge + 1) % wayCorners.length;
+                    EastNorth midEN = SnappiGrid.midpoint(
+                            wayCorners[hoveredEdge], wayCorners[i1]);
+                    Point midScreen = mv.getPoint(midEN);
+                    handleEdgeClickExtrude(midScreen, midEN);
+                }
+            }
             dragging = false;
+            wasDragged = false;
             dragStart = null;
+            dragPressPoint = null;
             mv.repaint();
         }
     }
@@ -323,7 +349,11 @@ public class SnappiMode extends MapMode
             case PHASE_EXTRUDE:
                 if (!dragging && wayCorners != null) {
                     syncWayCorners();
-                    hoveredEdge = SnappiGrid.hitTestEdgeHandle(e.getPoint(), mv, wayCorners);
+                    // syncWayCorners may call resetState() if the way was deleted
+                    // (e.g. user pressed Delete), which nullifies wayCorners.
+                    if (wayCorners != null) {
+                        hoveredEdge = SnappiGrid.hitTestEdgeHandle(e.getPoint(), mv, wayCorners);
+                    }
                 }
                 break;
             default:
@@ -336,6 +366,14 @@ public class SnappiMode extends MapMode
     @Override
     public void mouseDragged(MouseEvent e) {
         if (dragging && phase == Phase.PHASE_EXTRUDE) {
+            if (!wasDragged && dragPressPoint != null) {
+                double dx = e.getX() - dragPressPoint.x;
+                double dy = e.getY() - dragPressPoint.y;
+                double threshold = SnappiPreferences.getDragThresholdPx();
+                if (dx * dx + dy * dy >= threshold * threshold) {
+                    wasDragged = true;
+                }
+            }
             MainApplication.getMap().mapView.repaint();
         }
     }
@@ -377,6 +415,10 @@ public class SnappiMode extends MapMode
                 break;
             case KeyEvent.VK_V:
                 doubleStep();
+                mv.repaint();
+                break;
+            case KeyEvent.VK_ALT:
+                cycleStep();
                 mv.repaint();
                 break;
             default:
@@ -462,22 +504,22 @@ public class SnappiMode extends MapMode
     private void paintExtrudePhase(Graphics2D g, MapView mv) {
         if (wayCorners == null || anchorEN == null || uAxis == null || vAxis == null) return;
 
-        // Compute farthest corner from anchor for grid extent
-        EastNorth farthest = anchorEN;
-        double maxDistSq = 0;
-        for (EastNorth corner : wayCorners) {
-            double de = corner.east() - anchorEN.east();
-            double dn = corner.north() - anchorEN.north();
-            double distSq = de * de + dn * dn;
-            if (distSq > maxDistSq) {
-                maxDistSq = distSq;
-                farthest = corner;
-            }
+        // Combine wayCorners with any referenceCorners so that paintGridLines
+        // projects every corner onto the u/v axes and covers the full building
+        // bbox — the Euclidean-farthest heuristic fails for L-shaped footprints.
+        int refLen = referenceCorners != null ? referenceCorners.length : 0;
+        EastNorth[] allCorners = new EastNorth[wayCorners.length + refLen];
+        System.arraycopy(wayCorners, 0, allCorners, 0, wayCorners.length);
+        if (refLen > 0) {
+            System.arraycopy(referenceCorners, 0, allCorners, wayCorners.length, refLen);
         }
+
         // Draw only grid lines (no simple rect preview) — the actual
-        // building polygon may no longer be a simple rectangle after extrusions
-        SnappiGrid.paintGridLines(g, mv, anchorEN, farthest,
-                uAxis, vAxis, enStepU(), enStepV(), referenceCorners);
+        // building polygon may no longer be a simple rectangle after extrusions.
+        // target=anchorEN gives zero base extent; allCorners extends it to the
+        // full bounding box of the shape.
+        SnappiGrid.paintGridLines(g, mv, anchorEN, anchorEN,
+                uAxis, vAxis, enStepU(), enStepV(), allCorners);
 
         // Draw the actual building polygon outline
         SnappiGrid.paintPolygonOutline(g, mv, wayCorners);
@@ -507,9 +549,9 @@ public class SnappiMode extends MapMode
     /**
      * IDLE → click: detect reference orientation, place anchor, enter PHASE_ANCHOR.
      *
-     * @param mouseEN          click position in EastNorth
-     * @param preserveAxes     if true, keep the current uAxis/vAxis/hasReferenceOrientation
-     *                         (used when starting a new building after click-away)
+     * @param mouseEN      click position in EastNorth
+     * @param preserveAxes if true, keep the current uAxis/vAxis/hasReferenceOrientation
+     *                     (used when starting a new building after click-away)
      */
     private void handleClickIdle(EastNorth mouseEN, boolean preserveAxes) {
         anchorEN = mouseEN;
@@ -523,43 +565,28 @@ public class SnappiMode extends MapMode
         activeStepU = SnappiPreferences.getStepXMetres();
         activeStepV = SnappiPreferences.getStepYMetres();
 
-        if (!preserveAxes) {
-            hasReferenceOrientation = false;
-            referenceWay = null;
-            referenceCorners = null;
-        } else {
-            referenceWay = null;
-            referenceCorners = null;
-        }
-
         // Compute local projection scale factor at the anchor point
         projectionScale = SnappiGrid.projectionScale(anchorEN);
 
-        // 1. Angle-snap takes precedence
-        if (angleSnap) {
-            uAxis = new EastNorth(1, 0);
-            vAxis = new EastNorth(0, 1);
-            hasReferenceOrientation = true;
-        }
-
-        // 2. Check for a selected way → use its edge orientation
-        if (!hasReferenceOrientation) {
-            DataSet ds = getLayerManager().getEditDataSet();
-            if (ds != null) {
-                for (Way w : ds.getSelectedWays()) {
-                    if (!w.isDeleted() && w.getNodesCount() >= 2) {
-                        setReferenceFromWay(w);
-                        break;
-                    }
-                }
-            }
-        }
-
-        // 3. Check for a nearby closed way (existing building)
-        if (!hasReferenceOrientation) {
-            Way nearby = findNearbyClosedWay(mouseEN);
-            if (nearby != null) {
-                setReferenceFromWay(nearby);
+        if (!preserveAxes) {
+            // Fresh detection: derive axes from angle-snap, selected way, or nearby building.
+            MapView mv = MainApplication.getMap() != null ? MainApplication.getMap().mapView : null;
+            ReferenceOrientationDetector.Result ref = ReferenceOrientationDetector.detect(
+                    anchorEN, angleSnap, getLayerManager().getEditDataSet(), mv);
+            hasReferenceOrientation = ref.hasReferenceOrientation;
+            uAxis = ref.uAxis;
+            vAxis = ref.vAxis;
+            referenceWay = ref.referenceWay;
+            referenceCorners = ref.referenceCorners;
+        } else {
+            // Preserve the previous building's axes; clear way-specific state.
+            // Angle-snap still overrides if currently active.
+            referenceWay = null;
+            referenceCorners = null;
+            if (angleSnap) {
+                uAxis = new EastNorth(1, 0);
+                vAxis = new EastNorth(0, 1);
+                hasReferenceOrientation = true;
             }
         }
 
@@ -655,59 +682,6 @@ public class SnappiMode extends MapMode
     // ------------------------------------------------------------------
     // Reference orientation
     // ------------------------------------------------------------------
-
-    /**
-     * Derives grid orientation from a reference way's first edge.
-     */
-    private void setReferenceFromWay(Way w) {
-        if (w.getNodesCount() < 2) return;
-        EastNorth n0 = w.getNode(0).getEastNorth();
-        EastNorth n1 = w.getNode(1).getEastNorth();
-        EastNorth[] axes = SnappiGrid.computeAxes(n0, n1);
-        uAxis = axes[0];
-        vAxis = axes[1];
-        hasReferenceOrientation = true;
-        referenceWay = w;
-
-        // Cache reference way corners for grid extent
-        List<Node> nodes = w.getNodes();
-        int count = w.isClosed() ? nodes.size() - 1 : nodes.size();
-        referenceCorners = new EastNorth[count];
-        for (int i = 0; i < count; i++) {
-            referenceCorners[i] = nodes.get(i).getEastNorth();
-        }
-    }
-
-    /**
-     * Finds the nearest closed way (potential building) near the click point.
-     * Uses a generous screen-distance hit radius.
-     */
-    private Way findNearbyClosedWay(EastNorth clickEN) {
-        DataSet ds = getLayerManager().getEditDataSet();
-        if (ds == null) return null;
-
-        MapView mv = MainApplication.getMap().mapView;
-        Point clickScreen = mv.getPoint(clickEN);
-        double radiusSq = SnappiPreferences.getHandleRadius() * 4.0;
-        radiusSq = radiusSq * radiusSq;
-
-        Way best = null;
-        double bestDist = radiusSq;
-
-        for (Way w : ds.getWays()) {
-            if (w.isDeleted() || !w.isClosed() || w.getNodesCount() < 3) continue;
-            for (int i = 0; i < w.getNodesCount() - 1; i++) {
-                Point pa = mv.getPoint(w.getNode(i).getEastNorth());
-                Point pb = mv.getPoint(w.getNode(i + 1).getEastNorth());
-                double dSq = distToSegmentSq(clickScreen, pa, pb);
-                if (dSq < bestDist) {
-                    bestDist = dSq;
-                    best = w;
-                }
-            }
-        }
-        return best;
-    }
 
     /**
      * Finds the nearest existing OSM node within a screen-pixel radius
@@ -956,13 +930,22 @@ public class SnappiMode extends MapMode
         wayCorners = newCorners;
 
         // Merge collinear nodes at the two junctions to eliminate overhangs.
-        // Check i0 (original start of extruded edge) and i0+3 (original end,
-        // shifted by +2 from the insertion).
-        mergeCollinearAtIndex(i0 + 3); // check original i1 first (higher index)
-        mergeCollinearAtIndex(i0);     // then original i0
+        // After inserting 2 nodes after i0, the original i1 node has shifted:
+        //   normal case (i1 > i0): i1 is now at i0+3
+        //   wrap-around case (i1 == 0, i.e. i0 was the last edge): i1 is still at 0
+        // Always process the higher index first to avoid shifting the lower one.
+        int newI1Idx = (i1 > i0) ? (i0 + 3) : i1;
+        int hiIdx = Math.max(i0, newI1Idx);
+        int loIdx = Math.min(i0, newI1Idx);
+        mergeCollinearAtIndex(hiIdx);
+        mergeCollinearAtIndex(loIdx);
+
+        // Clear stale hover state — wayCorners may have shrunk and the old
+        // hoveredEdge index could now be out of range or point to the wrong edge.
+        hoveredEdge = -1;
 
         Logging.debug("arkki-snappi: extruded edge {0} by {1} m, polygon now has {2} corners",
-                hoveredEdge, offset, wayCorners.length);
+                i0, offset, wayCorners.length);
     }
 
     /**
@@ -1057,6 +1040,20 @@ public class SnappiMode extends MapMode
         refreshStatusText();
     }
 
+    /**
+     * Cycles the active snap step through the preset list (Alt key).
+     * Both U and V steps are set to the same preset value.
+     */
+    private void cycleStep() {
+        List<Double> presets = SnappiPreferences.getStepPresets();
+        if (presets.isEmpty()) return;
+        presetIndex = (presetIndex + 1) % presets.size();
+        double step = presets.get(presetIndex);
+        activeStepU = step;
+        activeStepV = step;
+        refreshStatusText();
+    }
+
     // ------------------------------------------------------------------
     // Status bar
     // ------------------------------------------------------------------
@@ -1113,11 +1110,6 @@ public class SnappiMode extends MapMode
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
-
-    /** Squared distance from point p to segment (a, b) in screen coordinates. */
-    private static double distToSegmentSq(Point p, Point a, Point b) {
-        return SnappiGrid.distToSegmentSq(p, a, b);
-    }
 
     // ------------------------------------------------------------------
     // Reset
@@ -1323,7 +1315,9 @@ public class SnappiMode extends MapMode
         wayCorners = null;
         hoveredEdge = -1;
         dragging = false;
+        wasDragged = false;
         dragStart = null;
+        dragPressPoint = null;
         projectionScale = 1.0;
         refreshStatusText();
     }

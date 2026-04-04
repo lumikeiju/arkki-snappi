@@ -1,4 +1,4 @@
-// License: GPL. For details, see LICENSE file.
+// License: AGPL v3 or later. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.arkkisnappi;
 
 import java.awt.Color;
@@ -65,6 +65,9 @@ public final class SnappiPreferences {
     /** Whether to auto-shrinkwrap (resolve self-intersections) when finishing a shape. */
     public static final String KEY_AUTO_SHRINKWRAP = "arkki_snappi.auto_shrinkwrap";
 
+    /** Minimum pixel distance the mouse must move before a press→release is treated as a drag. */
+    public static final String KEY_DRAG_THRESHOLD_PX = "arkki_snappi.drag_threshold_px";
+
     // ------------------------------------------------------------------
     // Color keys
     // ------------------------------------------------------------------
@@ -93,6 +96,7 @@ public final class SnappiPreferences {
     public static final boolean DEFAULT_CCW_WINDING = true;
     public static final boolean DEFAULT_AUTO_SIMPLIFY = true;
     public static final boolean DEFAULT_AUTO_SHRINKWRAP = true;
+    public static final int DEFAULT_DRAG_THRESHOLD_PX = 5;
 
     private SnappiPreferences() {
         // utility class — no instances
@@ -247,6 +251,10 @@ public final class SnappiPreferences {
         return Config.getPref().getInt(KEY_HANDLE_RADIUS, DEFAULT_HANDLE_RADIUS);
     }
 
+    public static void setHandleRadius(int px) {
+        Config.getPref().putInt(KEY_HANDLE_RADIUS, px);
+    }
+
     /** Pixel radius for snapping corners to existing OSM nodes. */
     public static int getNodeSnapRadius() {
         return Config.getPref().getInt(KEY_NODE_SNAP_RADIUS, DEFAULT_NODE_SNAP_RADIUS);
@@ -282,6 +290,15 @@ public final class SnappiPreferences {
 
     public static void setAutoShrinkwrap(boolean v) {
         Config.getPref().putBoolean(KEY_AUTO_SHRINKWRAP, v);
+    }
+
+    /** Minimum pixel distance before a press→release is treated as a drag (extrude). */
+    public static int getDragThresholdPx() {
+        return Config.getPref().getInt(KEY_DRAG_THRESHOLD_PX, DEFAULT_DRAG_THRESHOLD_PX);
+    }
+
+    public static void setDragThresholdPx(int px) {
+        Config.getPref().putInt(KEY_DRAG_THRESHOLD_PX, px);
     }
 
     // ------------------------------------------------------------------

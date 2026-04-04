@@ -36,7 +36,7 @@ Corners automatically snap to nearby existing nodes for shared-wall accuracy. Wh
 
 ## Settings
 
-Available in **JOSM Preferences → ArkkiSnappi** tab, or via **More tools → Snappi settings…** (`Alt+Shift+B`):
+Available in **JOSM Preferences → Snappi** tab, or via **More tools → Snappi settings…**:
 
 - **Step size** — Base snap increment (default: 1 ft / 0.3048 m), X and Y independently or linked
 - **Display unit** — `ft` or `m`
@@ -94,4 +94,4 @@ This launches a JOSM instance with the plugin pre-loaded.
 
 ## License
 
-GPL v3+. See [LICENSE](LICENSE) for details.
+AGPL v3. See [LICENSE](LICENSE) for details.

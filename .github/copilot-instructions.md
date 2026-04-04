@@ -21,6 +21,7 @@ arkki-snappi/
 │   ├── SnappiMode.java           # MapMode state machine: IDLE → ANCHOR → EXTRUDE
 │   ├── SnappiGrid.java           # Stateless geometry + grid rendering utility
 │   ├── SnappiShrinkwrap.java     # Self-intersection detection + outer boundary
+│   ├── ReferenceOrientationDetector.java # Reference orientation detection
 │   ├── SnappiPreferences.java    # Typed preference accessors (Config.getPref wrappers)
 │   └── SnappiPreferencesDialog.java  # JOSM Preferences tab + standalone dialog
 └── images/mapmode/arkkisnappi.png    # Toolbar icon
@@ -63,7 +64,7 @@ Reference plugins: [multipoly-gone](https://github.com/watmildon/multipoly-gone)
 
 - Java 11+ language level
 - 4-space indentation, UTF-8, CRLF line endings
-- GPLv2+ license header on every source file
+- AGPL v3 license header on every source file
 - Javadoc on all public classes and methods
 - Package: `org.openstreetmap.josm.plugins.arkkisnappi`
 - Preference keys: `arkki_snappi.step_metres`, `arkki_snappi.tags`, etc.

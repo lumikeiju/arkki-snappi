@@ -1,4 +1,4 @@
-// License: GPL. For details, see LICENSE file.
+// License: AGPL v3 or later. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.arkkisnappi;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
@@ -68,6 +68,7 @@ public class SnappiPreferencesDialog extends DefaultTabPreferenceSetting {
     private JCheckBox autoShrinkwrapCheck;
     private JSpinner maxGridLinesSpinner;
     private JSpinner nodeSnapRadiusSpinner;
+    private JSpinner dragThresholdSpinner;
 
     // --- Color swatches ---
     private JButton gridColorBtn;
@@ -309,6 +310,21 @@ public class SnappiPreferencesDialog extends DefaultTabPreferenceSetting {
         gbc.gridy = row++;
         behaviourPanel.add(autoShrinkwrapCheck, gbc);
 
+        // Drag threshold
+        gbc.gridwidth = 1;
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        behaviourPanel.add(new JLabel(tr("Drag threshold (px):")), gbc);
+        dragThresholdSpinner = new JSpinner(
+                new SpinnerNumberModel(SnappiPreferences.getDragThresholdPx(), 1, 100, 1));
+        gbc.gridx = 1;
+        behaviourPanel.add(dragThresholdSpinner, gbc);
+        gbc.gridx = 2;
+        JLabel dragHint = new JLabel(tr("(min pixels to start an extrude drag)"));
+        dragHint.setFont(dragHint.getFont().deriveFont(Font.ITALIC));
+        behaviourPanel.add(dragHint, gbc);
+        row++;
+
         outerGbc.gridy = 2;
         outerPanel.add(behaviourPanel, outerGbc);
 
@@ -467,6 +483,7 @@ public class SnappiPreferencesDialog extends DefaultTabPreferenceSetting {
         SnappiPreferences.setAutoShrinkwrap(autoShrinkwrapCheck.isSelected());
         SnappiPreferences.setMaxGridLines(((Number) maxGridLinesSpinner.getValue()).intValue());
         SnappiPreferences.setNodeSnapRadius(((Number) nodeSnapRadiusSpinner.getValue()).intValue());
+        SnappiPreferences.setDragThresholdPx(((Number) dragThresholdSpinner.getValue()).intValue());
 
         // Colors
         SnappiPreferences.setGridColor(gridColor);

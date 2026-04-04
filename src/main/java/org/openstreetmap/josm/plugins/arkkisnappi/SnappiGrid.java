@@ -1,4 +1,4 @@
-// License: GPL. For details, see LICENSE file.
+// License: AGPL v3 or later. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.arkkisnappi;
 
 import java.awt.BasicStroke;
@@ -239,7 +239,15 @@ public final class SnappiGrid {
                 anchor.east() + vLen * vAxis.east(),
                 anchor.north() + vLen * vAxis.north());
 
-        if (ccw) {
+        // The signed area of {c0,c1,c2,c3} is proportional to uLen*vLen
+        // (vAxis is always a 90° CCW rotation of uAxis, so the cross product
+        // uAxis × vAxis = 1).  When the user drags into a mixed-sign quadrant
+        // (e.g. uLen>0 but vLen<0) the natural order {c0,c1,c2,c3} is CW, not
+        // CCW — causing incorrect winding regardless of the ccw preference.
+        // Fix: check the actual sign and reverse the vertex list if needed.
+        boolean naturalCcw = (uLen * vLen > 0);
+        boolean wantReverse = (ccw != naturalCcw);
+        if (!wantReverse) {
             return new EastNorth[]{c0, c1, c2, c3};
         } else {
             return new EastNorth[]{c0, c3, c2, c1};

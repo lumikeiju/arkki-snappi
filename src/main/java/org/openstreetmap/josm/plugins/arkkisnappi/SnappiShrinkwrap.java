@@ -1,4 +1,4 @@
-// License: GPL. For details, see LICENSE file.
+// License: AGPL v3 or later. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.arkkisnappi;
 
 import java.util.ArrayList;
@@ -142,9 +142,23 @@ public final class SnappiShrinkwrap {
                 splits.sort((a, b) -> Double.compare(a[0], b[0]));
                 for (double[] sp : splits) {
                     EastNorth pt = new EastNorth(sp[1], sp[2]);
-                    // Avoid adding a point that coincides with an existing vertex
-                    if (!nearEqual(pt, corners[i]) &&
-                            !nearEqual(pt, corners[(i + 1) % n])) {
+                    // Avoid adding a point coincident with an existing vertex
+                    if (nearEqual(pt, corners[i]) || nearEqual(pt, corners[(i + 1) % n])) {
+                        continue;
+                    }
+                    // Avoid near-duplicate split points on the same edge (can occur
+                    // when two different edges intersect edge i at almost the same
+                    // position due to floating-point differences in T-intersections).
+                    boolean duplicate = false;
+                    for (int k = result.size() - 1; k >= 0; k--) {
+                        if (nearEqual(result.get(k), pt)) {
+                            duplicate = true;
+                            break;
+                        }
+                        // Stop searching once we're past the current edge's splits
+                        if (nearEqual(result.get(k), corners[i])) break;
+                    }
+                    if (!duplicate) {
                         result.add(pt);
                     }
                 }
