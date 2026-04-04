@@ -14,6 +14,8 @@ import java.awt.geom.Line2D;
 import java.awt.geom.Path2D;
 
 import org.openstreetmap.josm.data.coor.EastNorth;
+import org.openstreetmap.josm.data.coor.LatLon;
+import org.openstreetmap.josm.data.projection.ProjectionRegistry;
 import org.openstreetmap.josm.gui.MapView;
 
 /**
@@ -60,6 +62,46 @@ public final class SnappiGrid {
 
     private SnappiGrid() {
         // utility class — no instances
+    }
+
+    // ==================================================================
+    // Projection correction
+    // ==================================================================
+
+    /**
+     * Computes the real-world (great-circle) distance in metres between
+     * two EastNorth points, accounting for projection distortion.
+     *
+     * @param a first point in EastNorth
+     * @param b second point in EastNorth
+     * @return distance in real-world metres
+     */
+    public static double realWorldDistance(EastNorth a, EastNorth b) {
+        LatLon llA = ProjectionRegistry.getProjection().eastNorth2latlon(a);
+        LatLon llB = ProjectionRegistry.getProjection().eastNorth2latlon(b);
+        return llA.greatCircleDistance(llB);
+    }
+
+    /**
+     * Computes the local projection scale factor at a given EastNorth point.
+     *
+     * <p>Returns the number of EastNorth units per real-world metre.
+     * Multiply a real-world-metre step size by this factor to obtain the
+     * correct EastNorth step size for snapping and grid rendering.</p>
+     *
+     * <p>For EPSG:3857 (Mercator) this equals {@code sec(latitude)}.</p>
+     *
+     * @param en the point at which to compute the scale factor
+     * @return EastNorth units per real-world metre (≥ 1 for Mercator)
+     */
+    public static double projectionScale(EastNorth en) {
+        LatLon ll = ProjectionRegistry.getProjection().eastNorth2latlon(en);
+        double delta = 100.0;
+        EastNorth en2 = new EastNorth(en.east() + delta, en.north());
+        LatLon ll2 = ProjectionRegistry.getProjection().eastNorth2latlon(en2);
+        double realDist = ll.greatCircleDistance(ll2);
+        if (realDist < 1e-12) return 1.0;
+        return delta / realDist;
     }
 
     // ==================================================================
@@ -450,7 +492,7 @@ public final class SnappiGrid {
         }
 
         // Length label on the line
-        double length = Math.abs(uLen);
+        double length = realWorldDistance(anchor, target);
         if (length > 1e-6) {
             paintEdgeLabel(g, mv, anchor, target, length);
         }
@@ -493,9 +535,7 @@ public final class SnappiGrid {
         for (int i = 0; i < corners.length; i++) {
             EastNorth a = corners[i];
             EastNorth b = corners[(i + 1) % corners.length];
-            double edgeLen = Math.sqrt(
-                    (b.east() - a.east()) * (b.east() - a.east()) +
-                    (b.north() - a.north()) * (b.north() - a.north()));
+            double edgeLen = realWorldDistance(a, b);
             if (edgeLen > 1e-6) {
                 paintEdgeLabel(g, mv, a, b, edgeLen);
             }
@@ -644,12 +684,12 @@ public final class SnappiGrid {
             EastNorth midNew = new EastNorth(
                     midOld.east() + extrudeOffset * normal.east(),
                     midOld.north() + extrudeOffset * normal.north());
-            paintEdgeLabel(g, mv, midOld, midNew, absOffset);
+            paintEdgeLabel(g, mv, midOld, midNew, realWorldDistance(midOld, midNew));
         }
 
         // Length label on the extruded edge
         if (edgeLen > 1e-6) {
-            paintEdgeLabel(g, mv, newStart, newEnd, edgeLen);
+            paintEdgeLabel(g, mv, newStart, newEnd, realWorldDistance(newStart, newEnd));
         }
     }
 

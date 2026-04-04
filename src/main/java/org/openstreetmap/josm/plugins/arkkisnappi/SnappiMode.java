@@ -139,6 +139,23 @@ public class SnappiMode extends MapMode
     private double activeStepU;
     private double activeStepV;
 
+    /**
+     * EastNorth units per real-world metre at the current anchor point.
+     * Computed once when the anchor is placed to correct for projection
+     * distortion (e.g. Mercator scale factor).
+     */
+    private double projectionScale = 1.0;
+
+    /** Returns the u-step scaled to EastNorth units. */
+    private double enStepU() {
+        return activeStepU * projectionScale;
+    }
+
+    /** Returns the v-step scaled to EastNorth units. */
+    private double enStepV() {
+        return activeStepV * projectionScale;
+    }
+
     // --- Modifier keys ---
 
     private boolean shiftDown;
@@ -416,14 +433,14 @@ public class SnappiMode extends MapMode
         if (hasReferenceOrientation) {
             // 2-click mode: full grid + rectangle preview + length labels
             SnappiGrid.paintGrid(g, mv, anchorEN, snappedTarget,
-                    uAxis, vAxis, activeStepU, activeStepV, referenceCorners);
+                    uAxis, vAxis, enStepU(), enStepV(), referenceCorners);
             EastNorth[] preview = SnappiGrid.computeCorners(
                     anchorEN, snappedTarget, uAxis, vAxis, true);
             SnappiGrid.paintLengthLabels(g, mv, preview);
         } else {
             // 3-click mode: line preview (u-axis only)
             SnappiGrid.paintLinePreview(g, mv, anchorEN, snappedTarget,
-                    uAxis, activeStepU);
+                    uAxis, enStepU());
         }
     }
 
@@ -431,7 +448,7 @@ public class SnappiMode extends MapMode
         if (anchorEN == null || snappedTarget == null || uAxis == null || vAxis == null) return;
 
         SnappiGrid.paintGrid(g, mv, anchorEN, snappedTarget,
-                uAxis, vAxis, activeStepU, activeStepV, referenceCorners);
+                uAxis, vAxis, enStepU(), enStepV(), referenceCorners);
         EastNorth[] preview = SnappiGrid.computeCorners(
                 anchorEN, snappedTarget, uAxis, vAxis, true);
         SnappiGrid.paintLengthLabels(g, mv, preview);
@@ -460,7 +477,7 @@ public class SnappiMode extends MapMode
         // Draw only grid lines (no simple rect preview) — the actual
         // building polygon may no longer be a simple rectangle after extrusions
         SnappiGrid.paintGridLines(g, mv, anchorEN, farthest,
-                uAxis, vAxis, activeStepU, activeStepV, referenceCorners);
+                uAxis, vAxis, enStepU(), enStepV(), referenceCorners);
 
         // Draw the actual building polygon outline
         SnappiGrid.paintPolygonOutline(g, mv, wayCorners);
@@ -478,7 +495,7 @@ public class SnappiMode extends MapMode
                 EastNorth mouseEN = mv.getEastNorth(mouseScreen.x, mouseScreen.y);
                 double offset = computeExtrudeOffset(mouseEN);
                 SnappiGrid.paintExtrudePreview(g, mv, anchorEN, uAxis, vAxis,
-                        activeStepU, activeStepV, wayCorners, hoveredEdge, offset);
+                        enStepU(), enStepV(), wayCorners, hoveredEdge, offset);
             }
         }
     }
@@ -514,6 +531,9 @@ public class SnappiMode extends MapMode
             referenceWay = null;
             referenceCorners = null;
         }
+
+        // Compute local projection scale factor at the anchor point
+        projectionScale = SnappiGrid.projectionScale(anchorEN);
 
         // 1. Angle-snap takes precedence
         if (angleSnap) {
@@ -599,7 +619,7 @@ public class SnappiMode extends MapMode
             uAxis = axes[0];
             vAxis = axes[1];
             snappedTarget = SnappiGrid.snap(mouseEN, anchorEN, uAxis, vAxis,
-                    activeStepU, activeStepV, 1, ctrlDown);
+                    enStepU(), enStepV(), 1, ctrlDown);
         } else {
             // 2-click mode: axes fixed, snap both
             int lockAxis = 0;
@@ -611,7 +631,7 @@ public class SnappiMode extends MapMode
                 lockAxis = (uProj >= vProj) ? 1 : 2;
             }
             snappedTarget = SnappiGrid.snap(mouseEN, anchorEN, uAxis, vAxis,
-                    activeStepU, activeStepV, lockAxis, ctrlDown);
+                    enStepU(), enStepV(), lockAxis, ctrlDown);
         }
     }
 
@@ -625,7 +645,7 @@ public class SnappiMode extends MapMode
         double dx = mouseEN.east() - anchorEN.east();
         double dy = mouseEN.north() - anchorEN.north();
         double vProj = dx * vAxis.east() + dy * vAxis.north();
-        double vSnap = ctrlDown ? vProj : SnappiGrid.snapScalar(vProj, activeStepV);
+        double vSnap = ctrlDown ? vProj : SnappiGrid.snapScalar(vProj, enStepV());
 
         snappedTarget = new EastNorth(
                 anchorEN.east() + fixedULen * uAxis.east() + vSnap * vAxis.east(),
@@ -762,7 +782,7 @@ public class SnappiMode extends MapMode
         // Find nearest grid point on this edge
         EastNorth gridPt = SnappiGrid.nearestGridPointOnEdge(
                 mouseEN, wayCorners, edgeIdx,
-                anchorEN, uAxis, vAxis, activeStepU, activeStepV);
+                anchorEN, uAxis, vAxis, enStepU(), enStepV());
         if (gridPt == null) return;
 
         DataSet ds = getLayerManager().getEditDataSet();
@@ -864,9 +884,18 @@ public class SnappiMode extends MapMode
     }
 
     /**
-     * Commits an edge extrusion by creating two new nodes at the offset
-     * positions and inserting them into the way, producing a rectangular bump.
-     * The original corner nodes stay in place.
+     * Commits an edge extrusion by inserting two new nodes at the offset
+     * positions, then merging any collinear nodes at the junctions.
+     *
+     * <p>The insert-then-merge approach handles both use cases correctly:</p>
+     * <ul>
+     *   <li><b>Full edge extrude</b> — the old endpoints become collinear
+     *       with adjacent edges and are automatically removed, producing a
+     *       clean resized rectangle.</li>
+     *   <li><b>Sub-edge extrude</b> (after a split) — only the endpoint
+     *       shared with the un-extruded sub-edge is non-collinear, so it
+     *       is kept, producing a clean L-/T-/U-shaped bump.</li>
+     * </ul>
      */
     private void commitExtrude(EastNorth mouseEN) {
         if (hoveredEdge < 0 || wayCorners == null || createdWay == null) return;
@@ -882,14 +911,15 @@ public class SnappiMode extends MapMode
         if (ds == null) return;
 
         int i0 = hoveredEdge;
+        int i1 = (i0 + 1) % wayCorners.length;
 
         // Compute extruded positions
         EastNorth newPos0 = new EastNorth(
                 wayCorners[i0].east() + moveE,
                 wayCorners[i0].north() + moveN);
         EastNorth newPos1 = new EastNorth(
-                wayCorners[(i0 + 1) % wayCorners.length].east() + moveE,
-                wayCorners[(i0 + 1) % wayCorners.length].north() + moveN);
+                wayCorners[i1].east() + moveE,
+                wayCorners[i1].north() + moveN);
 
         // Create two new nodes at the extruded positions
         Node newNode0 = new Node(
@@ -898,12 +928,12 @@ public class SnappiMode extends MapMode
                 ProjectionRegistry.getProjection().eastNorth2latlon(newPos1));
 
         // Build updated way node list: insert between i0 and i0+1
-        List<Node> newNodes = new ArrayList<>(createdWay.getNodes());
-        newNodes.add(i0 + 1, newNode1);
-        newNodes.add(i0 + 1, newNode0);
+        List<Node> updatedNodes = new ArrayList<>(createdWay.getNodes());
+        updatedNodes.add(i0 + 1, newNode1);
+        updatedNodes.add(i0 + 1, newNode0);
 
         Way updatedWay = new Way(createdWay);
-        updatedWay.setNodes(newNodes);
+        updatedWay.setNodes(updatedNodes);
 
         List<Command> cmds = new ArrayList<>();
         cmds.add(new AddCommand(ds, newNode0));
@@ -925,8 +955,65 @@ public class SnappiMode extends MapMode
         }
         wayCorners = newCorners;
 
+        // Merge collinear nodes at the two junctions to eliminate overhangs.
+        // Check i0 (original start of extruded edge) and i0+3 (original end,
+        // shifted by +2 from the insertion).
+        mergeCollinearAtIndex(i0 + 3); // check original i1 first (higher index)
+        mergeCollinearAtIndex(i0);     // then original i0
+
         Logging.debug("arkki-snappi: extruded edge {0} by {1} m, polygon now has {2} corners",
                 hoveredEdge, offset, wayCorners.length);
+    }
+
+    /**
+     * If the node at {@code idx} in the current wayCorners/createdWay is
+     * collinear with its neighbours, removes it from the way and from
+     * wayCorners, deleting the orphan node if possible.
+     */
+    private void mergeCollinearAtIndex(int idx) {
+        if (wayCorners == null || createdWay == null) return;
+        int n = wayCorners.length;
+        if (n <= 3 || idx < 0 || idx >= n) return;
+
+        EastNorth prev = wayCorners[(idx - 1 + n) % n];
+        EastNorth curr = wayCorners[idx];
+        EastNorth next = wayCorners[(idx + 1) % n];
+
+        if (!isCollinear(prev, curr, next)) return;
+
+        DataSet ds = getLayerManager().getEditDataSet();
+        if (ds == null) return;
+
+        // Remove from way
+        List<Node> nodes = new ArrayList<>(createdWay.getNodes());
+        Node removedNode = nodes.get(idx);
+        nodes.remove(idx);
+        // If the removed node was the closing node (first == last), fix closure
+        if (idx == 0) {
+            nodes.set(nodes.size() - 1, nodes.get(0));
+        }
+
+        Way updated = new Way(createdWay);
+        updated.setNodes(nodes);
+
+        List<Command> cmds = new ArrayList<>();
+        cmds.add(new ChangeCommand(createdWay, updated));
+        if (!removedNode.hasKeys() && removedNode.getParentWays().size() <= 1) {
+            cmds.add(new DeleteCommand(ds, Collections.singleton(removedNode)));
+        }
+
+        UndoRedoHandler.getInstance().add(
+                new SequenceCommand(tr("Merge collinear node (arkki-snappi)"), cmds));
+
+        // Update cached corners
+        EastNorth[] shrunk = new EastNorth[n - 1];
+        for (int k = 0; k < idx; k++) {
+            shrunk[k] = wayCorners[k];
+        }
+        for (int k = idx; k < n - 1; k++) {
+            shrunk[k] = wayCorners[k + 1];
+        }
+        wayCorners = shrunk;
     }
 
     /**
@@ -944,7 +1031,7 @@ public class SnappiMode extends MapMode
 
         // Determine which step to use based on normal alignment with axes
         double uDot = Math.abs(normal.east() * uAxis.east() + normal.north() * uAxis.north());
-        double step = uDot > 0.5 ? activeStepU : activeStepV;
+        double step = uDot > 0.5 ? enStepU() : enStepV();
         return SnappiGrid.snapScalar(rawOffset, step);
     }
 
@@ -990,9 +1077,7 @@ public class SnappiMode extends MapMode
             case PHASE_ANCHOR:
                 if (hasReferenceOrientation) {
                     if (snappedTarget != null && anchorEN != null) {
-                        double dx = snappedTarget.east() - anchorEN.east();
-                        double dy = snappedTarget.north() - anchorEN.north();
-                        double dist = Math.sqrt(dx * dx + dy * dy);
+                        double dist = SnappiGrid.realWorldDistance(anchorEN, snappedTarget);
                         map.statusLine.setHelpText(
                                 tr("Click to place the opposite corner. "
                                         + "Distance: {0}. Step: {1}{2}",
@@ -1239,6 +1324,7 @@ public class SnappiMode extends MapMode
         hoveredEdge = -1;
         dragging = false;
         dragStart = null;
+        projectionScale = 1.0;
         refreshStatusText();
     }
 }

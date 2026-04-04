@@ -48,10 +48,16 @@ Reference plugins: [multipoly-gone](https://github.com/watmildon/multipoly-gone)
 
 ## Coordinate Systems
 
-- **EastNorth**: projected metres — used for ALL geometric calculations and snapping
-- **LatLon**: WGS-84 degrees — only for OSM data storage
+- **EastNorth**: projected coordinates — used for ALL geometric calculations and snapping
+- **LatLon**: WGS-84 degrees — only for OSM data storage and projection-correction calculations
 - **Point2D / MapView pixels**: screen space — only for hit-testing and rendering
 - Step size is stored in metres internally; displayed in user's chosen unit (ft/m)
+
+**Projection distortion (critical):** In JOSM's default Web Mercator projection (EPSG:3857), EastNorth units are NOT equal to real-world metres — they are inflated by sec(latitude). This is corrected in two ways:
+1. **Display labels**: always use `SnappiGrid.realWorldDistance(a, b)` (→ `ILatLon.greatCircleDistance()`) for correct ground distance
+2. **Snap grid spacing**: `SnappiMode` calls `SnappiGrid.projectionScale(anchorEN)` at anchor placement to get the local EastNorth-units-per-metre; `enStepU()` / `enStepV()` helpers apply this scale before every snap or paint call
+
+**Never** compute measurement labels or snap steps with raw EastNorth Euclidean arithmetic.
 
 ## Coding Conventions
 

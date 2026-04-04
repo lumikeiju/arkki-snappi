@@ -358,11 +358,18 @@ public final class SnappiPreferences {
     }
 
     /**
-     * Formats a number with up to 6 decimal places, trimming trailing zeros.
-     * Produces clean output like "1 ft" instead of "1.000000 ft".
+     * Formats a number with up to 5 significant figures, trimming trailing zeros.
+     * The 5-sigfig rounding eliminates floating-point noise from
+     * projection / geodesic computations (e.g. 240.002 → 240, 15.999997 → 16).
      */
     private static String formatNumber(double value) {
-        // Use enough precision to avoid loss, then strip trailing zeros.
+        // Round to 5 significant figures to eliminate sub-ppm
+        // floating-point noise from greatCircleDistance / projectionScale.
+        if (value != 0) {
+            double magnitude = Math.ceil(Math.log10(Math.abs(value)));
+            double scale = Math.pow(10, 5 - magnitude);
+            value = Math.round(value * scale) / scale;
+        }
         // Locale.ROOT ensures a dot decimal separator everywhere.
         String s = String.format(java.util.Locale.ROOT, "%.6f", value);
         s = s.replaceAll("0+$", "");
