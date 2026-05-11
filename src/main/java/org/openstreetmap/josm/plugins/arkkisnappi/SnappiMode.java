@@ -57,6 +57,7 @@ import org.openstreetmap.josm.tools.Shortcut;
  * <ul>
  *   <li><b>A</b> — toggle angle-snapping (cardinal-aligned grid)</li>
  *   <li><b>Shift</b> — axis-lock (snap only in the dominant axis)</li>
+ *   <li><b>Shift while finishing/extruding</b> — keep collinear nodes for that operation</li>
  *   <li><b>Ctrl</b> — free mode (disable snapping)</li>
  *   <li><b>C</b> — halve the active snap step size</li>
  *   <li><b>V</b> — double the active snap step size</li>
@@ -859,13 +860,14 @@ public class SnappiMode extends MapMode
 
     /**
      * Commits an edge extrusion by inserting two new nodes at the offset
-     * positions, then merging any collinear nodes at the junctions.
+     * positions, then applying the normal shrinkwrap and simplification
+     * cleanup for the operation.
      *
-     * <p>The insert-then-merge approach handles both use cases correctly:</p>
+     * <p>The insert-then-cleanup approach handles both use cases correctly:</p>
      * <ul>
      *   <li><b>Full edge extrude</b> — the old endpoints become collinear
-     *       with adjacent edges and are automatically removed, producing a
-     *       clean resized rectangle.</li>
+     *       with adjacent edges and are automatically removed unless Shift is
+     *       held, producing a clean resized rectangle.</li>
      *   <li><b>Sub-edge extrude</b> (after a split) — only the endpoint
      *       shared with the un-extruded sub-edge is non-collinear, so it
      *       is kept, producing a clean L-/T-/U-shaped bump.</li>
@@ -929,16 +931,8 @@ public class SnappiMode extends MapMode
         }
         wayCorners = newCorners;
 
-        // Merge collinear nodes at the two junctions to eliminate overhangs.
-        // After inserting 2 nodes after i0, the original i1 node has shifted:
-        //   normal case (i1 > i0): i1 is now at i0+3
-        //   wrap-around case (i1 == 0, i.e. i0 was the last edge): i1 is still at 0
-        // Always process the higher index first to avoid shifting the lower one.
-        int newI1Idx = (i1 > i0) ? (i0 + 3) : i1;
-        int hiIdx = Math.max(i0, newI1Idx);
-        int loIdx = Math.min(i0, newI1Idx);
-        mergeCollinearAtIndex(hiIdx);
-        mergeCollinearAtIndex(loIdx);
+        shrinkwrapWay();
+        simplifyWay();
 
         // Clear stale hover state — wayCorners may have shrunk and the old
         // hoveredEdge index could now be out of range or point to the wrong edge.
@@ -946,57 +940,6 @@ public class SnappiMode extends MapMode
 
         Logging.debug("arkki-snappi: extruded edge {0} by {1} m, polygon now has {2} corners",
                 i0, offset, wayCorners.length);
-    }
-
-    /**
-     * If the node at {@code idx} in the current wayCorners/createdWay is
-     * collinear with its neighbours, removes it from the way and from
-     * wayCorners, deleting the orphan node if possible.
-     */
-    private void mergeCollinearAtIndex(int idx) {
-        if (wayCorners == null || createdWay == null) return;
-        int n = wayCorners.length;
-        if (n <= 3 || idx < 0 || idx >= n) return;
-
-        EastNorth prev = wayCorners[(idx - 1 + n) % n];
-        EastNorth curr = wayCorners[idx];
-        EastNorth next = wayCorners[(idx + 1) % n];
-
-        if (!isCollinear(prev, curr, next)) return;
-
-        DataSet ds = getLayerManager().getEditDataSet();
-        if (ds == null) return;
-
-        // Remove from way
-        List<Node> nodes = new ArrayList<>(createdWay.getNodes());
-        Node removedNode = nodes.get(idx);
-        nodes.remove(idx);
-        // If the removed node was the closing node (first == last), fix closure
-        if (idx == 0) {
-            nodes.set(nodes.size() - 1, nodes.get(0));
-        }
-
-        Way updated = new Way(createdWay);
-        updated.setNodes(nodes);
-
-        List<Command> cmds = new ArrayList<>();
-        cmds.add(new ChangeCommand(createdWay, updated));
-        if (!removedNode.hasKeys() && removedNode.getParentWays().size() <= 1) {
-            cmds.add(new DeleteCommand(ds, Collections.singleton(removedNode)));
-        }
-
-        UndoRedoHandler.getInstance().add(
-                new SequenceCommand(tr("Merge collinear node (arkki-snappi)"), cmds));
-
-        // Update cached corners
-        EastNorth[] shrunk = new EastNorth[n - 1];
-        for (int k = 0; k < idx; k++) {
-            shrunk[k] = wayCorners[k];
-        }
-        for (int k = idx; k < n - 1; k++) {
-            shrunk[k] = wayCorners[k + 1];
-        }
-        wayCorners = shrunk;
     }
 
     /**
@@ -1099,7 +1042,7 @@ public class SnappiMode extends MapMode
             case PHASE_EXTRUDE:
                 map.statusLine.setHelpText(
                         tr("Drag handle to extrude, click edge to split, "
-                                + "Enter/Esc to finish. Step: {0}{1}",
+                                + "Shift keeps nodes. Enter/Esc to finish. Step: {0}{1}",
                                 stepStr, angleStr));
                 break;
             default:
@@ -1118,6 +1061,7 @@ public class SnappiMode extends MapMode
     /**
      * Finishes the current shape: commits any in-progress rectangle,
      * optionally shrinkwraps and simplifies the way, then resets to IDLE.
+     * Holding Shift skips simplification for this finish operation only.
      */
     private void finishShape() {
         switch (phase) {
@@ -1230,7 +1174,7 @@ public class SnappiMode extends MapMode
      * neighbours within a small tolerance.
      */
     private void simplifyWay() {
-        if (!SnappiPreferences.isAutoSimplify()) return;
+        if (!shouldAutoSimplify()) return;
         if (createdWay == null || wayCorners == null || wayCorners.length <= 4) return;
 
         DataSet ds = getLayerManager().getEditDataSet();
@@ -1252,6 +1196,7 @@ public class SnappiMode extends MapMode
         // Build updated node list (closed way: last node == first)
         List<Node> oldNodes = createdWay.getNodes();
         List<Node> newNodes = new ArrayList<>();
+        List<EastNorth> newCorners = new ArrayList<>();
         List<Node> nodesToDelete = new ArrayList<>();
         for (int i = 0; i < n; i++) {
             if (removeIndices.contains(i)) {
@@ -1262,8 +1207,10 @@ public class SnappiMode extends MapMode
                 }
             } else {
                 newNodes.add(oldNodes.get(i));
+                newCorners.add(wayCorners[i]);
             }
         }
+        if (newCorners.size() < 3) return;
         newNodes.add(newNodes.get(0)); // close the way
 
         Way updatedWay = new Way(createdWay);
@@ -1278,8 +1225,15 @@ public class SnappiMode extends MapMode
         UndoRedoHandler.getInstance().add(
                 new SequenceCommand(tr("Simplify building (arkki-snappi)"), cmds));
 
+        wayCorners = newCorners.toArray(new EastNorth[0]);
+
         Logging.debug("arkki-snappi: simplified way, removed {0} collinear nodes",
                 removeIndices.size());
+    }
+
+    /** Returns true when auto-simplification should run for this operation. */
+    private boolean shouldAutoSimplify() {
+        return SnappiPreferences.isAutoSimplify() && !shiftDown;
     }
 
     /**

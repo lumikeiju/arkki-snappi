@@ -18,21 +18,22 @@ JOSM plugin for quick and accurate building footprint mapping with a 2-axis snap
 6. **Enter** — Finish the current building and return to idle.
 7. **Esc** — Cancel and return to idle.
 
-Corners automatically snap to nearby existing nodes for shared-wall accuracy. When a shape is finished, collinear nodes are simplified and any self-intersections from overlapping extrusions are resolved automatically (shrinkwrap).
+Corners automatically snap to nearby existing nodes for shared-wall accuracy. After each extrusion and when a shape is finished, collinear nodes are simplified and any self-intersections from overlapping extrusions are resolved automatically (shrinkwrap). Hold `Shift` while releasing an extrusion or finishing to keep collinear nodes for that operation.
 
 ### Keyboard Shortcuts
 
-| Key     | Effect                                   |
-|---------|------------------------------------------|
-| `B`     | Activate Snappi mode                     |
-| `A`     | Toggle cardinal (N/S/E/W) grid alignment |
-| `C`     | Halve the current snap step size         |
-| `V`     | Double the current snap step size        |
-| `Shift` | Lock snap to the dominant axis only      |
-| `Ctrl`  | Disable snapping (free position)         |
-| `Alt`   | Cycle to the next step preset            |
-| `Enter` | Finish the current building              |
-| `Esc`   | Cancel current operation                 |
+| Key     | Effect                                 |
+|---------|----------------------------------------|
+| `B`     | Activate Snappi mode                   |
+| `A`     | Toggle cardinal grid alignment         |
+| `C`     | Halve the current snap step size       |
+| `V`     | Double the current snap step size      |
+| `Shift` | Lock snap to the dominant axis         |
+| `Shift` | Bypass simplification for an operation |
+| `Ctrl`  | Disable snapping (free position)       |
+| `Alt`   | Cycle to the next step preset          |
+| `Enter` | Finish the current building            |
+| `Esc`   | Cancel current operation               |
 
 ## Settings
 
@@ -44,8 +45,8 @@ Available in **JOSM Preferences → Snappi** tab, or via **More tools → Snappi
 - **Default tags** — Key/value pairs applied to new buildings (default: `building=yes`)
 - **Tag presets** — One-click buttons for common tag sets
 - **Auto-select** — Select newly created way (default: on)
-- **Auto-simplify** — Remove collinear nodes when finishing (default: on)
-- **Auto-shrinkwrap** — Resolve self-intersecting polygons when finishing (default: on)
+- **Auto-simplify** — Remove collinear nodes after extrusions and when finishing (default: on; hold `Shift` to bypass once)
+- **Auto-shrinkwrap** — Resolve self-intersecting polygons after extrusions and when finishing (default: on)
 - **Winding order** — Counter-clockwise or clockwise node ordering
 - **Color themes** — Blueprint (default), Satellite, Neon, Ink — or pick individual colors
 
