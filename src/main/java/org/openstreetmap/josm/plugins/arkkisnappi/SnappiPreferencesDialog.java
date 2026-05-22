@@ -60,6 +60,7 @@ public class SnappiPreferencesDialog extends DefaultTabPreferenceSetting {
     private JCheckBox linkedCheck;
     private boolean updatingLinked;
     private JComboBox<String> unitCombo;
+    private String displayedUnit;
     private DefaultTableModel tagTableModel;
     private JCheckBox autoSelectCheck;
 
@@ -145,8 +146,10 @@ public class SnappiPreferencesDialog extends DefaultTabPreferenceSetting {
         gbc.gridx = 1;
         snapPanel.add(stepXSpinner, gbc);
 
+        displayedUnit = SnappiPreferences.getStepUnit();
         unitCombo = new JComboBox<>(new String[]{"ft", "m"});
-        unitCombo.setSelectedItem(SnappiPreferences.getStepUnit());
+        unitCombo.setSelectedItem(displayedUnit);
+        unitCombo.addActionListener(e -> updateDisplayedUnits((String) unitCombo.getSelectedItem()));
         gbc.gridx = 2;
         snapPanel.add(unitCombo, gbc);
 
@@ -505,6 +508,33 @@ public class SnappiPreferencesDialog extends DefaultTabPreferenceSetting {
         btn.setPreferredSize(new Dimension(28, 28));
         updateSwatch(btn, color);
         return btn;
+    }
+
+    private void updateDisplayedUnits(String newUnit) {
+        if (newUnit == null || newUnit.equals(displayedUnit)) {
+            return;
+        }
+
+        updatingLinked = true;
+        stepXSpinner.setValue(convertDisplayedValue(
+                ((Number) stepXSpinner.getValue()).doubleValue(), displayedUnit, newUnit));
+        stepYSpinner.setValue(convertDisplayedValue(
+                ((Number) stepYSpinner.getValue()).doubleValue(), displayedUnit, newUnit));
+        updatingLinked = false;
+        displayedUnit = newUnit;
+    }
+
+    private static double convertDisplayedValue(double value, String fromUnit, String toUnit) {
+        if (fromUnit == null || toUnit == null || fromUnit.equals(toUnit)) {
+            return value;
+        }
+
+        double metres = "ft".equals(fromUnit)
+                ? SnappiPreferences.feetToMetres(value)
+                : value;
+        return "ft".equals(toUnit)
+                ? SnappiPreferences.metresToFeet(metres)
+                : metres;
     }
 
     private static void updateSwatch(JButton btn, Color color) {

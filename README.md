@@ -4,6 +4,9 @@
 
 JOSM plugin for quick and accurate building footprint mapping with a 2-axis snap grid.
 
+Requires JOSM 19439 or newer. The plugin adds a dedicated Snappi map mode with the `B`
+shortcut and builds a distributable JAR at `build/dist/ArkkiSnappi.jar`.
+
 ## What It Does
 
 **arkki-snappi** combines the rectangle-drawing workflow of [BuildingsTools](https://wiki.openstreetmap.org/wiki/JOSM/Plugins/BuildingsTools) with the edge-extrusion UX of [Extrude](https://josm.openstreetmap.de/wiki/Help/Action/Extrude), adding a snap grid that works in _both_ axes simultaneously.
@@ -41,7 +44,9 @@ Available in **JOSM Preferences → Snappi** tab, or via **More tools → Snappi
 
 - **Step size** — Base snap increment (default: 1 ft / 0.3048 m), X and Y independently or linked
 - **Display unit** — `ft` or `m`
-- **Node snap radius** — Pixel radius for snapping corners to existing nodes (default: 15 px)
+- **Node snap radius** — Screen-space pixel radius for snapping corners to existing nodes (default: 15 px), so the real-world snap distance changes with zoom level
+- **Max grid lines** — Per-axis cap to keep the overlay responsive on large zoom levels
+- **Drag threshold** — Minimum cursor movement before a press becomes an extrude drag
 - **Default tags** — Key/value pairs applied to new buildings (default: `building=yes`)
 - **Tag presets** — One-click buttons for common tag sets
 - **Auto-select** — Select newly created way (default: on)
@@ -55,12 +60,16 @@ Available in **JOSM Preferences → Snappi** tab, or via **More tools → Snappi
 Requires **Java 11+** (Java 21 recommended). No other prerequisites — the Gradle wrapper downloads everything else automatically.
 
 ```sh
+# Run the test suite
+.\gradlew.bat test          # Windows
+./gradlew test              # macOS / Linux
+
 # Build the plugin JAR
 .\gradlew.bat build          # Windows
 ./gradlew build              # macOS / Linux
 ```
 
-The JAR is produced at `build/dist/ArkkiSnappi.jar`.
+The build runs the test suite and produces the release JAR at `build/dist/ArkkiSnappi.jar`.
 
 ### Installing into JOSM
 
@@ -88,6 +97,13 @@ The build also generates a local plugin list at `build/localDist/list`. In JOSM:
 ```
 
 This launches a JOSM instance with the plugin pre-loaded.
+
+## Release Notes
+
+- Package name: `org.openstreetmap.josm.plugins.arkkisnappi`
+- Minimum JOSM version: `19439`
+- Main class: `org.openstreetmap.josm.plugins.arkkisnappi.ArkkiSnappiPlugin`
+- License: AGPL v3
 
 ## Credits
 

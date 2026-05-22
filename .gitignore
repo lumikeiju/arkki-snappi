@@ -11,5 +11,6 @@ build/
 Thumbs.db
 
 # Project
+bin/
 local-storage/
 arkki-snappi.code-workspace
