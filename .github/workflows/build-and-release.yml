@@ -1,6 +1,6 @@
 # @format
 
-name: Build
+name: Build and Release
 
 on:
   push:
@@ -39,7 +39,6 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: ArkkiSnappi.jar
-      - uses: softprops/action-gh-release@v3
-        with:
-          files: ArkkiSnappi.jar
-          generate_release_notes: true
+      - run: gh release create "${{ github.ref_name }}" ArkkiSnappi.jar --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
