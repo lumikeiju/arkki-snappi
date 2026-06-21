@@ -21,7 +21,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: gradle/actions/setup-gradle@v6.1.1
+      - uses: gradle/actions/setup-gradle@v6.2.0
       - run: chmod +x ./gradlew && ./gradlew build
       - uses: actions/upload-artifact@v7
         with:
