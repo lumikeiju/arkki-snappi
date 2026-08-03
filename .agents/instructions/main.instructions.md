@@ -8,13 +8,19 @@ applyTo: "**"
 
 ## Identity & Build
 
-JOSM plugin · Package `org.openstreetmap.josm.plugins.arkkisnappi` · Shortcut `B` · Min JOSM 19439 · AGPL v3
+JOSM plugin · Package `org.openstreetmap.josm.plugins.arkkisnappi` · Map-mode shortcut `B` · Min JOSM 19439 · AGPL v3 (license header required on every source file)
+
+Version lives in `gradle.properties` (`version=0.3.0`). The Gradle wrapper is the only build tool; Java 11+ is required (Java 21 recommended — matches CI).
 
 ```bash
-.\gradlew.bat build    # → build/dist/ArkkiSnappi.jar
-.\gradlew.bat test     # run unit tests (no JOSM instance needed)
-.\gradlew.bat runJosm  # launch JOSM with plugin loaded
+./gradlew build        # → build/dist/ArkkiSnappi.jar (runs tests first)
+./gradlew test         # unit tests; no JOSM instance needed
+./gradlew runJosm      # launch JOSM with the plugin pre-loaded
+./gradlew clean        # remove build/
+# Windows: use .\gradlew.bat instead of ./gradlew
 ```
+
+CI (`.github/workflows/build-and-release.yml`) runs `./gradlew build` on JDK 21 (Temurin) for pushes to `main`, PRs targeting `main`, tags `v*`, and manual dispatch. Tags `v*` additionally create a GitHub Release with the JAR attached.
 
 ## File Map
 
@@ -28,11 +34,16 @@ src/main/java/…/arkkisnappi/
 ├── SnappiPreferences.java             # Config.getPref wrappers (all-static)
 └── SnappiPreferencesDialog.java       # JOSM Preferences tab + standalone dialog
 
-local-storage/planning.md  # working design notes
-docs/                      # intentionally sparse (no authoritative spec file)
+src/test/java/…/arkkisnappi/
+├── SnappiGridTest.java                # pure EastNorth arithmetic
+└── SnappiShrinkwrapTest.java          # shrinkwrap invariants
 ```
 
+There is no authoritative spec document — the code and tests are the source of truth. All classes except `SnappiMode` are stateless utilities; never introduce instance state into them.
+
 ## State Machine (SnappiMode)
+
+Phases: `IDLE → PHASE_ANCHOR → PHASE_DEPTH → PHASE_EXTRUDE`
 
 ```
 IDLE →(click 1)→ PHASE_ANCHOR
@@ -44,10 +55,10 @@ PHASE_EXTRUDE:
   click edge    → handleEdgeClickExtrude() (splits edge, inserts node)
   click away    → finish + start new building preserving axes
   Enter         → finishShape() → shrinkwrapWay() → simplifyWay() → IDLE
-  Esc           → IDLE
+  Esc           → IDLE (resetState())
 ```
 
-Reference orientation priority: `A` key (cardinal) > selected way > nearby building > none (3-click mode).
+Reference orientation priority (see `ReferenceOrientationDetector.detect`): `A` key (cardinal) > first selected way with ≥ 2 nodes > nearby closed way > none (3-click mode).
 
 ## ⚠ Coordinate System — Common Error Source
 
@@ -84,6 +95,7 @@ world  = anchor + uSnapped·uAxis + vSnapped·vAxis
 3. **`wayCorners[]` cache** — must reflect the current way geometry at all times; updated in `commitExtrude()`, `simplifyWay()`, `shrinkwrapWay()`, and rebuilt by `syncWayCorners()`.
 4. **Cleanup order** — after `commitExtrude()` updates `wayCorners`: `shrinkwrapWay()` then `simplifyWay()`. Same pair on `finishShape()`.
 5. **Simplify bypass** — `shouldAutoSimplify()` returns `false` when `shiftDown`; this is per-operation, not a global toggle.
+6. **Projection-aware geometry** — never store or measure in screen `Point` space; convert to `EastNorth` first.
 
 ## Keyboard & Modifiers
 
@@ -99,21 +111,24 @@ world  = anchor + uSnapped·uAxis + vSnapped·vAxis
 
 ## Preferences (`arkki_snappi.*`)
 
-All step values stored and operated on in **real-world metres**.
+All step values are stored and operated on in **real-world metres**. Defaults are declared as `DEFAULT_*` constants in `SnappiPreferences`.
 
 ```
-step_x_metres / step_y_metres   double   0.3048   (1 ft)
+step_x_metres / step_y_metres   double   0.3048                (1 ft)
 linked_steps                    bool     true
-step_unit                       string   "ft"
+step_unit                       string   "ft"                  ("ft" | "m")
 step_presets                    string   "0.0762;0.1524;0.3048;0.6096;1.0;0.5;0.25"
+tags                            list     [["building","yes"]]  default tags for new buildings
+auto_select                     bool     true                  auto-select created way
 auto_simplify / auto_shrinkwrap bool     true
 ccw_winding                     bool     true
 handle_radius / node_snap_radius int     10 / 15
 drag_threshold_px               int      5
 max_grid_lines                  int      200
+color.grid / color.rect / color.anchor / color.target / color.handle / color.extrude  # ARGB ints; blueprint theme by default
 ```
 
-Display: `SnappiPreferences.formatStep(metres)` / `formatStepPair(xM, yM)` — rounds to 5 sig-figs, strips trailing zeros.
+Display: `SnappiPreferences.formatStep(metres)` / `formatStepPair(xM, yM)` — rounds to 5 sig-figs, strips trailing zeros. `metresToFeet()` / `feetToMetres()` use exact `0.3048` (no rounding loss).
 
 ## Key JOSM API Patterns
 
@@ -139,9 +154,16 @@ map.keyDetector.addModifierExListener(this);  // ModifierExListener
 map.keyDetector.addKeyListener(this);         // KeyPressReleaseListener
 ```
 
+## Testing
+
+- Unit tests cover **pure EastNorth arithmetic only** — no JOSM instance required (`SnappiGridTest`, `SnappiShrinkwrapTest`). Keep it that way for new tests.
+- Run with `./gradlew test`; CI runs the same suite as part of `./gradlew build`.
+- When changing snapping/geometry/shrinkwrap behaviour, add or extend a unit test before/with the change.
+
 ## Coding Conventions
 
-- 4-space indent · UTF-8 · CRLF · AGPL v3 header on every source file · Javadoc on public API
+- 4-space indent · UTF-8 · CRLF (enforced by `.editorconfig`) · AGPL v3 header on every source file · Javadoc on public API
 - CCW winding default (JOSM convention); `SnappiPreferences.isCcwWinding()` toggleable
-- Preference keys: `arkki_snappi.<name>` — no external deps beyond JOSM core
-- Unit tests: pure EastNorth arithmetic only — no JOSM instance required (`SnappiGridTest`, `SnappiShrinkwrapTest`)
+- Preference keys: `arkki_snappi.<name>` — no external deps beyond JOSM core and JUnit (tests)
+- YAML/JSON/JS files are `@format`-tagged (Prettier with the repo's `.prettierrc.js`); keep existing formatting on edit
+- Keep changes minimal and focused; this is a small, dependency-free plugin
