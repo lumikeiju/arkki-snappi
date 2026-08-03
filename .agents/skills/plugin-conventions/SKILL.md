@@ -19,7 +19,7 @@ paths:
 ## Formatting & files
 
 - 4-space indent · UTF-8 · **CRLF** line endings (enforced by `.editorconfig`).
-- AGPL v3 license header on every source file: `// License: AGPL v3 or later. For details, see LICENSE file.`
+- GPL-2.0-or-later license header on every source file: `// License: GPL v2 or later. For details, see LICENSE file.`
 - Javadoc on all public API (include `@author`); utility classes get a private no-op constructor.
 - YAML/JSON/JS files carry the `@format` marker and follow Prettier (`.prettierrc.js`).
 

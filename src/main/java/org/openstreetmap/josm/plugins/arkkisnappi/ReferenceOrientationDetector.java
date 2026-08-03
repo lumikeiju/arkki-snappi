@@ -1,4 +1,4 @@
-// License: AGPL v3 or later. For details, see LICENSE file.
+// License: GPL v2 or later. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.arkkisnappi;
 
 import java.awt.Point;

@@ -1,6 +1,6 @@
 # ArkkiSnappi — JOSM plugin
 
-Quick building-footprint mapping with a 2-axis snap grid. Package `org.openstreetmap.josm.plugins.arkkisnappi` · map-mode shortcut `B` · min JOSM 19439 · License: `AGPL-2.0-or-later` (matching easy-pan).
+Quick building-footprint mapping with a 2-axis snap grid. Package `org.openstreetmap.josm.plugins.arkkisnappi` · map-mode shortcut `B` · min JOSM 19439 · License: `GPL-2.0-or-later`.
 
 ## Build & test
 

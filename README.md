@@ -98,12 +98,16 @@ The build also generates a local plugin list at `build/localDist/list`. In JOSM:
 
 This launches a JOSM instance with the plugin pre-loaded.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, code conventions, and licensing. Release history is tracked in [CHANGELOG.md](CHANGELOG.md).
+
 ## Release Notes
 
 - Package name: `org.openstreetmap.josm.plugins.arkkisnappi`
 - Minimum JOSM version: `19439`
 - Main class: `org.openstreetmap.josm.plugins.arkkisnappi.ArkkiSnappiPlugin`
-- License: AGPL v3
+- License: GPL-2.0-or-later
 
 ## Credits
 
@@ -111,4 +115,4 @@ This launches a JOSM instance with the plugin pre-loaded.
 
 ## License
 
-AGPL v3. See [LICENSE](LICENSE) for details.
+GPL-2.0-or-later. See [LICENSE](LICENSE) for details.

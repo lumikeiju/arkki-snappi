@@ -1,6 +1,6 @@
 ---
 <!-- @format -->
-<!-- SPDX-License-Identifier: AGPL-2.0-or-later -->
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
 
 # Contributing to ArkkiSnappi
 
@@ -34,7 +34,7 @@ Windows: use `.\gradlew.bat` instead of `./gradlew`.
 ## Code conventions
 
 - 4-space indent · UTF-8 · **CRLF** line endings (`.editorconfig` enforces).
-- AGPL license header on every source file: `// License: AGPL v3 or later. For details, see LICENSE file.`
+- GPL-2.0-or-later license header on every source file: `// License: GPL v2 or later. For details, see LICENSE file.`
 - Javadoc on all public API.
 - All OSM writes go through JOSM `Command`s — never mutate a `DataSet` directly.
 - Geometry/snapping in `EastNorth` only; never mix `EastNorth`, `LatLon`, and screen `Point`; always apply the Mercator projection correction.
@@ -47,4 +47,4 @@ For full detail see `.agents/instructions/main.instructions.md` and the auto-loa
 
 ## Licensing
 
-By contributing, you agree that your contributions are licensed under **AGPL-2.0-or-later**, matching easy-pan's licensing. See `LICENSE` for details.
+By contributing, you agree that your contributions are licensed under **GPL-2.0-or-later**, matching easy-pan's licensing. See `LICENSE` for details.

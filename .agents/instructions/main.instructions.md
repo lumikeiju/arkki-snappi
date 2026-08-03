@@ -8,7 +8,7 @@ applyTo: "**"
 
 ## Identity & Build
 
-JOSM plugin · Package `org.openstreetmap.josm.plugins.arkkisnappi` · Map-mode shortcut `B` · Min JOSM 19439 · AGPL v3 (license header required on every source file)
+JOSM plugin · Package `org.openstreetmap.josm.plugins.arkkisnappi` · Map-mode shortcut `B` · Min JOSM 19439 · GPL-2.0-or-later (license header required on every source file)
 
 Version lives in `gradle.properties` (`version=0.3.0`). The Gradle wrapper is the only build tool; Java 11+ is required (Java 21 recommended — matches CI).
 
@@ -162,7 +162,7 @@ map.keyDetector.addKeyListener(this);         // KeyPressReleaseListener
 
 ## Coding Conventions
 
-- 4-space indent · UTF-8 · CRLF (enforced by `.editorconfig`) · AGPL v3 header on every source file · Javadoc on public API
+- 4-space indent · UTF-8 · CRLF (enforced by `.editorconfig`) · GPL-2.0-or-later header on every source file · Javadoc on public API
 - CCW winding default (JOSM convention); `SnappiPreferences.isCcwWinding()` toggleable
 - Preference keys: `arkki_snappi.<name>` — no external deps beyond JOSM core and JUnit (tests)
 - YAML/JSON/JS files are `@format`-tagged (Prettier with the repo's `.prettierrc.js`); keep existing formatting on edit
