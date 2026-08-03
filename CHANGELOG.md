@@ -24,6 +24,20 @@ All notable changes to ArkkiSnappi are documented here, using the [Keep a Change
 
 -->
 
+## Unreleased
+
+### Added
+
+- `AGENTS.md`, `CONTRIBUTING.md`, and this `CHANGELOG.md` to guide human and agent-driven development
+- Four agent skills under `.agents/skills/` (build-test-run, coordinate-spaces, undo-safe-edits, plugin-conventions)
+- Dependabot coverage for Gradle dependencies alongside the existing GitHub Actions updates
+
+### Changed
+
+- Re-licensed to **GPL-2.0-or-later** (previously AGPL v3), matching easy-pan; full license texts and source headers updated
+- Moved and rewrote AI instructions from `.github/instructions/` to `.agents/instructions/`
+- README now links the contributing guide and the changelog
+
 ## v0.3.0 (2026-05-22)
 
 ### Added
