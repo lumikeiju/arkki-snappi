@@ -1169,48 +1169,48 @@ public class SnappiMode extends MapMode
     }
 
     /**
-     * Removes collinear (non-corner) nodes from the committed way.
-     * A node is collinear if it lies on the straight line between its
-     * neighbours within a small tolerance.
+     * Removes collinear (non-corner) nodes and merges coincident duplicate
+     * nodes from the committed way.
+     *
+     * <p>Collinear nodes (lying on the straight line between their neighbours)
+     * are dropped. Coincident nodes — distinct Node objects at (nearly) the
+     * same position — are collapsed to a single node. This cleans up the
+     * zero-length edges left when an edge is extruded out and immediately
+     * back in: the intermediate nodes are collinear, but the new endpoints
+     * land back on existing corners, leaving duplicate vertices behind.</p>
      */
     private void simplifyWay() {
         if (!shouldAutoSimplify()) return;
         if (createdWay == null || wayCorners == null || wayCorners.length <= 4) return;
 
+        EastNorth[] simplified = SnappiGrid.simplifyCorners(wayCorners);
+        if (simplified == wayCorners || simplified.length == wayCorners.length) return;
+
         DataSet ds = getLayerManager().getEditDataSet();
         if (ds == null) return;
 
-        // Identify non-corner (collinear) indices
-        List<Integer> removeIndices = new ArrayList<>();
-        int n = wayCorners.length;
-        for (int i = 0; i < n; i++) {
-            EastNorth prev = wayCorners[(i - 1 + n) % n];
-            EastNorth curr = wayCorners[i];
-            EastNorth next = wayCorners[(i + 1) % n];
-            if (isCollinear(prev, curr, next)) {
-                removeIndices.add(i);
-            }
-        }
-        if (removeIndices.isEmpty()) return;
-
-        // Build updated node list (closed way: last node == first)
+        // Map each simplified corner back to a way node. Coincident
+        // duplicates resolve to the most useful node (tagged or shared
+        // with other ways).
         List<Node> oldNodes = createdWay.getNodes();
-        List<Node> newNodes = new ArrayList<>();
-        List<EastNorth> newCorners = new ArrayList<>();
+        List<Node> newNodes = new ArrayList<>(simplified.length);
+        for (EastNorth en : simplified) {
+            Node node = findBestMatchingNode(oldNodes, en);
+            if (node == null) return; // defensive; every corner must match
+            newNodes.add(node);
+        }
+
+        // Delete orphaned nodes: no tags, and after the change no longer
+        // referenced by any way.
         List<Node> nodesToDelete = new ArrayList<>();
-        for (int i = 0; i < n; i++) {
-            if (removeIndices.contains(i)) {
-                Node node = oldNodes.get(i);
-                // Delete orphan nodes: no tags and only referenced by this way
-                if (!node.hasKeys() && node.getParentWays().size() <= 1) {
-                    nodesToDelete.add(node);
-                }
-            } else {
-                newNodes.add(oldNodes.get(i));
-                newCorners.add(wayCorners[i]);
+        for (int i = 0; i < wayCorners.length; i++) {
+            Node node = oldNodes.get(i);
+            if (!newNodes.contains(node) && !node.hasKeys()
+                    && node.getParentWays().size() <= 1) {
+                nodesToDelete.add(node);
             }
         }
-        if (newCorners.size() < 3) return;
+
         newNodes.add(newNodes.get(0)); // close the way
 
         Way updatedWay = new Way(createdWay);
@@ -1225,32 +1225,48 @@ public class SnappiMode extends MapMode
         UndoRedoHandler.getInstance().add(
                 new SequenceCommand(tr("Simplify building (arkki-snappi)"), cmds));
 
-        wayCorners = newCorners.toArray(new EastNorth[0]);
+        int removed = wayCorners.length - simplified.length;
+        wayCorners = simplified;
 
-        Logging.debug("arkki-snappi: simplified way, removed {0} collinear nodes",
-                removeIndices.size());
+        Logging.debug("arkki-snappi: simplified way, removed {0} nodes", removed);
+    }
+
+    /**
+     * Finds the node from the given list whose position matches the target
+     * within a tight tolerance (1 mm), preferring nodes with tags or shared
+     * by other ways so coincident corners keep the most useful node.
+     *
+     * @return the best matching node, or null if none matches
+     */
+    private static Node findBestMatchingNode(List<Node> nodes, EastNorth target) {
+        Node best = null;
+        int bestPriority = -1;
+        for (Node n : nodes) {
+            EastNorth en = n.getEastNorth();
+            if (en == null) continue;
+            if (Math.abs(en.east() - target.east()) < 1e-3 &&
+                    Math.abs(en.north() - target.north()) < 1e-3) {
+                int priority = nodePriority(n);
+                if (priority > bestPriority) {
+                    bestPriority = priority;
+                    best = n;
+                }
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Priority score for choosing between coincident nodes during a merge:
+     * prefer nodes with tags or nodes shared with other ways.
+     */
+    private static int nodePriority(Node n) {
+        return (n.hasKeys() ? 1 : 0) + Math.max(0, n.getParentWays().size() - 1);
     }
 
     /** Returns true when auto-simplification should run for this operation. */
     private boolean shouldAutoSimplify() {
         return SnappiPreferences.isAutoSimplify() && !shiftDown;
-    }
-
-    /**
-     * Returns true if point b lies on the segment a–c within tolerance.
-     */
-    private static boolean isCollinear(EastNorth a, EastNorth b, EastNorth c) {
-        double acE = c.east() - a.east();
-        double acN = c.north() - a.north();
-        double abE = b.east() - a.east();
-        double abN = b.north() - a.north();
-        // Cross product magnitude = area of parallelogram
-        double cross = Math.abs(acE * abN - acN * abE);
-        double lenAC = Math.sqrt(acE * acE + acN * acN);
-        if (lenAC < 1e-9) return true;
-        // Perpendicular distance from b to line a–c
-        double dist = cross / lenAC;
-        return dist < 0.01; // 1 cm tolerance
     }
 
     /** Resets all transient state and returns to IDLE. */

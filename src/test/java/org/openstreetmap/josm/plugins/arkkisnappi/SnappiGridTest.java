@@ -642,4 +642,156 @@ class SnappiGridTest {
         // 0.5 is exactly halfway between 0 and 1; Math.round rounds up
         assertEquals(1.0, SnappiGrid.snapScalar(0.5, 1.0), EPS);
     }
+
+    // ------------------------------------------------------------------
+    // simplifyCorners
+    // ------------------------------------------------------------------
+
+    @Test
+    void simplifyCorners_simpleRectangle_returnsSameInstance() {
+        EastNorth[] rect = {
+            new EastNorth(0, 0),
+            new EastNorth(4, 0),
+            new EastNorth(4, 4),
+            new EastNorth(0, 4)
+        };
+        // Nothing to simplify → must return the input unchanged.
+        assertTrue(SnappiGrid.simplifyCorners(rect) == rect,
+                "unchanged input should be returned as-is");
+    }
+
+    @Test
+    void simplifyCorners_triangle_returnsSameInstance() {
+        EastNorth[] tri = {
+            new EastNorth(0, 0),
+            new EastNorth(4, 0),
+            new EastNorth(2, 3)
+        };
+        assertTrue(SnappiGrid.simplifyCorners(tri) == tri,
+                "polygons with fewer than 4 corners are never simplified");
+    }
+
+    @Test
+    void simplifyCorners_collinearMidpoints_removed() {
+        // Rectangle with an extra collinear node on each horizontal edge.
+        EastNorth[] shape = {
+            new EastNorth(0, 0),
+            new EastNorth(1, 0),
+            new EastNorth(2, 0),
+            new EastNorth(2, 1),
+            new EastNorth(1, 1),
+            new EastNorth(0, 1)
+        };
+        EastNorth[] result = SnappiGrid.simplifyCorners(shape);
+        assertCornersEqual(new EastNorth[]{
+            new EastNorth(0, 0),
+            new EastNorth(2, 0),
+            new EastNorth(2, 1),
+            new EastNorth(0, 1)
+        }, result);
+    }
+
+    @Test
+    void simplifyCorners_lShape_unchanged() {
+        // No corner is collinear or coincident → unchanged.
+        EastNorth[] lShape = {
+            new EastNorth(0, 0),
+            new EastNorth(4, 0),
+            new EastNorth(4, 2),
+            new EastNorth(2, 2),
+            new EastNorth(2, 4),
+            new EastNorth(0, 4)
+        };
+        assertTrue(SnappiGrid.simplifyCorners(lShape) == lShape,
+                "L-shape has no collinear corners");
+    }
+
+    @Test
+    void simplifyCorners_extrudeForwardThenBack_mergesCoincidentNodes() {
+        // Regression test: a 2×1 rectangle A(0,0) B(2,0) C(2,1) D(0,1) whose
+        // bottom edge was split at E(1,0), then the sub-edge E–B extruded
+        // downward by 0.5 and immediately back up. The intermediate bump
+        // corners E'(1,-0.5) and B'(2,-0.5) are collinear, while the new
+        // endpoints E''(1,0) and B''(2,0) land back on existing corners,
+        // leaving zero-length edges that collinear removal alone cannot see.
+        EastNorth[] shape = {
+            new EastNorth(0, 0),    // A
+            new EastNorth(1, 0),    // E (split node)
+            new EastNorth(1, -0.5), // E' (bump, collinear)
+            new EastNorth(1, 0),    // E'' (coincides with E)
+            new EastNorth(2, 0),    // B'' (coincides with B)
+            new EastNorth(2, -0.5), // B' (bump, collinear)
+            new EastNorth(2, 0),    // B
+            new EastNorth(2, 1),    // C
+            new EastNorth(0, 1)     // D
+        };
+        EastNorth[] result = SnappiGrid.simplifyCorners(shape);
+        assertCornersEqual(new EastNorth[]{
+            new EastNorth(0, 0),
+            new EastNorth(1, 0),
+            new EastNorth(2, 0),
+            new EastNorth(2, 1),
+            new EastNorth(0, 1)
+        }, result);
+    }
+
+    @Test
+    void simplifyCorners_fullEdgeExtrudeForwardThenBack_returnsRectangle() {
+        // A full-edge extrude out then back in: the intermediate nodes are
+        // collinear and removed, producing the original rectangle again.
+        EastNorth[] shape = {
+            new EastNorth(0, 0),    // A
+            new EastNorth(1.5, 0),  // B' (extruded out)
+            new EastNorth(1.0, 0),  // B'' (extruded back)
+            new EastNorth(1.0, 1),  // C''
+            new EastNorth(1.5, 1),  // C' (extruded out)
+            new EastNorth(0, 1)     // D
+        };
+        EastNorth[] result = SnappiGrid.simplifyCorners(shape);
+        assertCornersEqual(new EastNorth[]{
+            new EastNorth(0, 0),
+            new EastNorth(1.0, 0),
+            new EastNorth(1.0, 1),
+            new EastNorth(0, 1)
+        }, result);
+    }
+
+    @Test
+    void simplifyCorners_subEdgeBump_partialExtrudeBackKeepsBump() {
+        // A sub-edge extruded out by 0.5 and only partially retracted by 0.25
+        // keeps the remaining (shallower) bump. The old bump corners
+        // E'(1,-0.5)/B'(2,-0.5) are collinear with the new bump corners, and
+        // the original corner B(2,0) is now collinear with B'(2,-0.5)/C(2,1),
+        // so all three are removed; the reduced bump must survive.
+        EastNorth[] shape = {
+            new EastNorth(0, 0),    // A
+            new EastNorth(1, 0),    // E
+            new EastNorth(1, -0.5), // E' (old bump corner, now collinear)
+            new EastNorth(1, -0.25),// E'' (partially back)
+            new EastNorth(2, -0.25),// B'' (partially back)
+            new EastNorth(2, -0.5), // B' (old bump corner, now collinear)
+            new EastNorth(2, 0),    // B (now collinear with B'/C)
+            new EastNorth(2, 1),    // C
+            new EastNorth(0, 1)     // D
+        };
+        EastNorth[] result = SnappiGrid.simplifyCorners(shape);
+        assertCornersEqual(new EastNorth[]{
+            new EastNorth(0, 0),
+            new EastNorth(1, 0),
+            new EastNorth(1, -0.25),
+            new EastNorth(2, -0.25),
+            new EastNorth(2, 1),
+            new EastNorth(0, 1)
+        }, result);
+    }
+
+    private static void assertCornersEqual(EastNorth[] expected, EastNorth[] actual) {
+        assertEquals(expected.length, actual.length, "corner count");
+        for (int i = 0; i < expected.length; i++) {
+            assertEquals(expected[i].east(), actual[i].east(), 1e-6,
+                    "corner " + i + " east");
+            assertEquals(expected[i].north(), actual[i].north(), 1e-6,
+                    "corner " + i + " north");
+        }
+    }
 }
