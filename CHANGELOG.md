@@ -1,6 +1,6 @@
 ---
 <!-- @format -->
-<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- SPDX-License-Identifier: AGPL-2.0-or-later -->
 
 # ArkkiSnappi - Changelog
 

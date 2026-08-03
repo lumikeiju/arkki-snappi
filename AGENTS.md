@@ -1,6 +1,6 @@
 # ArkkiSnappi — JOSM plugin
 
-Quick building-footprint mapping with a 2-axis snap grid. Package `org.openstreetmap.josm.plugins.arkkisnappi` · map-mode shortcut `B` · min JOSM 19439 · AGPL v3.
+Quick building-footprint mapping with a 2-axis snap grid. Package `org.openstreetmap.josm.plugins.arkkisnappi` · map-mode shortcut `B` · min JOSM 19439 · License: `AGPL-2.0-or-later` (matching easy-pan).
 
 ## Build & test
 
@@ -22,6 +22,8 @@ Windows: use `.\gradlew.bat` instead of `./gradlew`. Java 11+ (Java 21 recommend
 ## Agent resources
 
 - **Full project reference:** `.agents/instructions/main.instructions.md`
+- **Contributing guide:** `CONTRIBUTING.md`
+- **Release history:** `CHANGELOG.md`
 - **Skills** (auto-load when triggered / relevant files edited):
   - `build-test-run` — build, test, run-JOSM commands & gotchas
   - `coordinate-spaces` — the three coordinate spaces + projection correction
