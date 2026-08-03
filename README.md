@@ -21,7 +21,7 @@ shortcut and builds a distributable JAR at `build/dist/ArkkiSnappi.jar`.
 6. **Enter** — Finish the current building and return to idle.
 7. **Esc** — Cancel and return to idle.
 
-Corners automatically snap to nearby existing nodes for shared-wall accuracy. After each extrusion and when a shape is finished, collinear nodes are simplified and any self-intersections from overlapping extrusions are resolved automatically (shrinkwrap). Hold `Shift` while releasing an extrusion or finishing to keep collinear nodes for that operation.
+Corners automatically snap to nearby existing nodes for shared-wall accuracy. After each extrusion and when a shape is finished, the outline is simplified automatically: collinear nodes are removed and coincident duplicates (left when an edge is extruded out and immediately back in) are merged, while any self-intersections from overlapping extrusions are resolved (shrinkwrap). Hold `Shift` while releasing an extrusion or finishing to keep the nodes for that operation.
 
 ### Keyboard Shortcuts
 
@@ -50,7 +50,7 @@ Available in **JOSM Preferences → Snappi** tab, or via **More tools → Snappi
 - **Default tags** — Key/value pairs applied to new buildings (default: `building=yes`)
 - **Tag presets** — One-click buttons for common tag sets
 - **Auto-select** — Select newly created way (default: on)
-- **Auto-simplify** — Remove collinear nodes after extrusions and when finishing (default: on; hold `Shift` to bypass once)
+- **Auto-simplify** — Remove collinear nodes and merge coincident duplicates after extrusions and when finishing (default: on; hold `Shift` to bypass once)
 - **Auto-shrinkwrap** — Resolve self-intersecting polygons after extrusions and when finishing (default: on)
 - **Winding order** — Counter-clockwise or clockwise node ordering
 - **Color themes** — Blueprint (default), Satellite, Neon, Ink — or pick individual colors

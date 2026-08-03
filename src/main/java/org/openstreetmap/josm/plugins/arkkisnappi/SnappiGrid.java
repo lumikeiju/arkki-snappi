@@ -12,6 +12,8 @@ import java.awt.geom.AffineTransform;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 import java.awt.geom.Path2D;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.openstreetmap.josm.data.coor.EastNorth;
 import org.openstreetmap.josm.data.coor.LatLon;
@@ -832,6 +834,85 @@ public final class SnappiGrid {
         }
 
         return new EastNorth(nx, ny);
+    }
+
+    /**
+     * Simplifies a closed polygon's corner list for building footprints.
+     *
+     * <p>Two cleanups are applied, in order:</p>
+     * <ol>
+     *   <li><b>Collinear removal</b> — corners that lie on the straight line
+     *       between their neighbours are dropped.</li>
+     *   <li><b>Coincident merge</b> — consecutive corners that occupy (nearly)
+     *       the same position are collapsed into one. This cleans up the
+     *       zero-length edges left behind when an edge is extruded out and
+     *       immediately back in: the new endpoints land on existing corners,
+     *       and once the collinear intermediate nodes are gone the duplicate
+     *       vertices become adjacent.</li>
+     * </ol>
+     *
+     * <p>The input winding order is preserved and only removals are performed.
+     * If no simplification applies, the input array is returned unchanged.</p>
+     *
+     * @param corners closed polygon corners (each corner listed once)
+     * @return the simplified corner list
+     */
+    public static EastNorth[] simplifyCorners(EastNorth[] corners) {
+        int n = corners.length;
+        if (n < 4) return corners;
+
+        // Remove collinear (non-corner) vertices.
+        List<EastNorth> kept = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            EastNorth prev = corners[(i - 1 + n) % n];
+            EastNorth curr = corners[i];
+            EastNorth next = corners[(i + 1) % n];
+            if (!isCollinear(prev, curr, next)) {
+                kept.add(curr);
+            }
+        }
+        if (kept.size() < 3) return corners;
+
+        // Collapse coincident consecutive vertices (zero-length edges).
+        List<EastNorth> merged = new ArrayList<>(kept.size());
+        for (EastNorth en : kept) {
+            if (!merged.isEmpty() && samePosition(merged.get(merged.size() - 1), en)) {
+                continue;
+            }
+            merged.add(en);
+        }
+        // Wrap-around: the last vertex may coincide with the first.
+        if (merged.size() >= 3 && samePosition(merged.get(0), merged.get(merged.size() - 1))) {
+            merged.remove(merged.size() - 1);
+        }
+
+        if (merged.size() == n) return corners;
+        return merged.toArray(new EastNorth[0]);
+    }
+
+    /**
+     * Returns true if point b lies on the segment a–c within tolerance.
+     */
+    private static boolean isCollinear(EastNorth a, EastNorth b, EastNorth c) {
+        double acE = c.east() - a.east();
+        double acN = c.north() - a.north();
+        double abE = b.east() - a.east();
+        double abN = b.north() - a.north();
+        // Cross product magnitude = area of parallelogram
+        double cross = Math.abs(acE * abN - acN * abE);
+        double lenAC = Math.sqrt(acE * acE + acN * acN);
+        if (lenAC < 1e-9) return true;
+        // Perpendicular distance from b to line a–c
+        double dist = cross / lenAC;
+        return dist < 0.01; // 1 cm tolerance
+    }
+
+    /**
+     * Returns true if two corners occupy (nearly) the same position.
+     */
+    private static boolean samePosition(EastNorth a, EastNorth b) {
+        return Math.abs(a.east() - b.east()) < 1e-3 &&
+                Math.abs(a.north() - b.north()) < 1e-3;
     }
 
     /**
