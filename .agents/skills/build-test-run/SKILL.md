@@ -33,5 +33,6 @@ Windows: use `.\gradlew.bat` instead of `./gradlew`.
 ## Gotchas
 
 - JavaExec and `test` tasks need `--add-exports` JVM flags — already configured in `build.gradle`; don't remove them.
+- Gradle version is pinned to 8.x. The JOSM Gradle plugin 0.8.2 uses Provider.forUseAtConfigurationTime(), which was removed in Gradle 9. Do not upgrade the Gradle wrapper past 8.x until the JOSM Gradle plugin is updated. The Dependabot gradle ecosystem entry has been intentionally omitted for this reason.
 - CI runs `./gradlew build` on JDK 21 (Temurin); tags `v*` also create a GitHub Release with the JAR attached.
 - Manual JOSM install: copy `build/dist/ArkkiSnappi.jar` into the JOSM plugins dir, or register local update site `file:/<repo>/build/localDist/list` for hot reload during development.

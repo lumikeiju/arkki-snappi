@@ -12,6 +12,8 @@ Quick building-footprint mapping with a 2-axis snap grid. Package `org.openstree
 
 Windows: use `.\gradlew.bat` instead of `./gradlew`. Java 11+ (Java 21 recommended — matches CI).
 
+Gradle version is pinned to 8.x. The JOSM Gradle plugin 0.8.2 uses Provider.forUseAtConfigurationTime(), which was removed in Gradle 9. Do not upgrade the Gradle wrapper past 8.x until the JOSM Gradle plugin is updated. The Dependabot gradle ecosystem entry has been intentionally omitted for this reason.
+
 ## Non-negotiable rules
 
 1. **Coordinates** — geometry/snapping in `EastNorth` only; never mix `EastNorth`, `LatLon`, screen `Point`. Mercator inflates EN vs real metres by `sec(lat)` (~2× at 60° lat): use `SnappiGrid.realWorldDistance`/`projectionScale` for measurements, never raw EN arithmetic.
