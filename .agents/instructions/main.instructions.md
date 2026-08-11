@@ -12,6 +12,8 @@ JOSM plugin · Package `org.openstreetmap.josm.plugins.arkkisnappi` · Map-mode 
 
 Version lives in `gradle.properties` (`version=0.3.0`). The Gradle wrapper is the only build tool; Java 11+ is required (Java 21 recommended — matches CI).
 
+Gradle version is pinned to 8.x. The JOSM Gradle plugin 0.8.2 uses Provider.forUseAtConfigurationTime(), which was removed in Gradle 9. Do not upgrade the Gradle wrapper past 8.x until the JOSM Gradle plugin is updated. The Dependabot gradle ecosystem entry has been intentionally omitted for this reason.
+
 ```bash
 ./gradlew build        # → build/dist/ArkkiSnappi.jar (runs tests first)
 ./gradlew test         # unit tests; no JOSM instance needed
