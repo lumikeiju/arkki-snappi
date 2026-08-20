@@ -1,4 +1,3 @@
----
 <!-- @format -->
 <!-- SPDX-License-Identifier: GPL-2.0-or-later -->
 
@@ -24,7 +23,7 @@ All notable changes to ArkkiSnappi are documented here, using the [Keep a Change
 
 -->
 
-## Unreleased
+## v0.4.0 (2026-08-20)
 
 ### Added
 
